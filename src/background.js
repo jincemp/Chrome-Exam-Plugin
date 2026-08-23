@@ -30,9 +30,39 @@ async function setBadge(tabId, { text = '', color = '#16a34a' } = {}) {
   } catch { /* the tab went away */ }
 }
 
+/** Decoded icons, keyed by icon set. Decoding is the expensive part. */
+const iconDataCache = new Map();
+
+/**
+ * Service workers have no DOM, and `path` support there has been patchy across
+ * Chrome versions. Decode the PNGs ourselves as a fallback so the tick always
+ * appears.
+ */
+async function toImageData(paths) {
+  const key = Object.values(paths).join('|');
+  if (!iconDataCache.has(key)) {
+    const entries = await Promise.all(Object.entries(paths).map(async ([size, file]) => {
+      const blob = await (await fetch(chrome.runtime.getURL(file))).blob();
+      const bitmap = await createImageBitmap(blob);
+      const canvas = new OffscreenCanvas(bitmap.width, bitmap.height);
+      const ctx = canvas.getContext('2d');
+      ctx.drawImage(bitmap, 0, 0);
+      bitmap.close();
+      return [size, ctx.getImageData(0, 0, canvas.width, canvas.height)];
+    }));
+    iconDataCache.set(key, Object.fromEntries(entries));
+  }
+  return iconDataCache.get(key);
+}
+
 async function setIcon(tabId, done) {
+  const path = done ? DONE_ICON : IDLE_ICON;
   try {
-    await chrome.action.setIcon({ tabId, path: done ? DONE_ICON : IDLE_ICON });
+    await chrome.action.setIcon({ tabId, path });
+    return;
+  } catch { /* fall through to decoding it ourselves */ }
+  try {
+    await chrome.action.setIcon({ tabId, imageData: await toImageData(path) });
   } catch { /* the tab went away */ }
 }
 

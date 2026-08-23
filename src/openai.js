@@ -227,7 +227,20 @@ function maxTokensFor(settings) {
 
 /* --------------------------------------------------------------- responses */
 
-function parseResponsesPayload(data) {
+/**
+ * `status` is one of completed | failed | incomplete | in_progress | queued |
+ * cancelled, and a failure at this level carries its own {code, message} shape -
+ * not the HTTP error envelope.
+ */
+export function parseResponsesPayload(data) {
+  if (data?.status === 'failed') {
+    const code = data.error?.code || '';
+    throw new OpenAIError(data.error?.message || 'OpenAI could not complete the request.', {
+      code,
+      kind: code === 'content_policy_violation' ? 'refusal' : 'api',
+      retryable: code === 'server_error' || code === 'rate_limit_exceeded',
+    });
+  }
   if (data?.status && data.status !== 'completed') {
     const reason = data.incomplete_details?.reason || data.status;
     if (reason === 'max_output_tokens') throw new TruncatedError();
@@ -238,20 +251,25 @@ function parseResponsesPayload(data) {
   }
 
   const items = Array.isArray(data?.output) ? data.output : [];
-  const message = items.find((i) => i?.type === 'message');
+  const messages = items.filter((i) => i?.type === 'message');
+
+  // A model may emit a phase:"commentary" message before its real answer, so
+  // take the last non-commentary one rather than the first message of any kind.
+  const message = messages.filter((m) => m.phase !== 'commentary').pop() || messages.pop();
   const parts = Array.isArray(message?.content) ? message.content : [];
 
   const refusal = parts.find((p) => p?.type === 'refusal');
   if (refusal) throw new OpenAIError(`The model declined: ${refusal.refusal}`, { kind: 'refusal' });
 
   const textPart = parts.find((p) => p?.type === 'output_text');
-  // `output_text` is an SDK convenience, but some gateways do send it; accept both.
+  // `output_text` is documented as an SDK-only convenience, but some gateways
+  // do send it over the wire; accept either.
   const content = textPart?.text ?? (typeof data?.output_text === 'string' ? data.output_text : '');
   if (!content) throw new OpenAIError('OpenAI returned an empty response.');
   return content;
 }
 
-function parseChatPayload(data) {
+export function parseChatPayload(data) {
   const choice = data?.choices?.[0];
   if (choice?.message?.refusal) {
     throw new OpenAIError(`The model declined: ${choice.message.refusal}`, { kind: 'refusal' });
@@ -328,9 +346,10 @@ export function relaxCaps(err, caps) {
   if (caps.maxTokens && /max_(output|completion)_tokens|max_tokens/.test(text)) { caps.maxTokens = false; return true; }
   if (caps.schema && /json_schema|response_format|\bschema\b|\bformat\b|structured/.test(text)) { caps.schema = false; return true; }
 
-  // Unknown 400: shed parameters in order of how little we need them.
+  // Unknown 400: shed parameters in order of how little we need them. `store` is
+  // deliberately absent - it only comes off when the server names it, because
+  // dropping it silently opts the user's exam text into retention.
   if (caps.verbosity) { caps.verbosity = false; return true; }
-  if (caps.store) { caps.store = false; return true; }
   if (caps.reasoning) { caps.reasoning = false; return true; }
   if (caps.temperature) { caps.temperature = false; return true; }
   if (caps.schema) { caps.schema = false; return true; }

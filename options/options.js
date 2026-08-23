@@ -5,7 +5,7 @@ const $ = (id) => document.getElementById(id);
 
 // Shown before we have talked to the API; replaced by the account's real list
 // once a working key is present.
-const SUGGESTED_MODELS = ['gpt-5.4-nano', 'gpt-5.4-mini', 'gpt-5.4', 'gpt-5.6-luna', 'gpt-5.5'];
+const SUGGESTED_MODELS = ['gpt-5.4-nano', 'gpt-5.6-luna', 'gpt-5.4-mini', 'gpt-5.4', 'gpt-5.5'];
 
 const setStatus = (text, kind) => {
   const el = $('status');
@@ -94,8 +94,10 @@ async function ensureHostPermission(baseUrl) {
     return true; // a malformed URL fails later with a clearer message
   }
   if (origin === 'https://api.openai.com/*') return true;
-  if (await chrome.permissions.contains({ origins: [origin] })) return true;
   try {
+    // No await before this call: anything awaited first consumes the click
+    // gesture and Chrome refuses to show the prompt. request() returns true
+    // immediately, without prompting, when the permission is already held.
     return await chrome.permissions.request({ origins: [origin] });
   } catch {
     return false;

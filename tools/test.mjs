@@ -42,7 +42,7 @@ globalThis.chrome = {
 };
 
 const { chunkText } = await import('../src/background.js');
-const { parseQuestions, relaxCaps } = await import('../src/openai.js');
+const { parseQuestions, relaxCaps, parseResponsesPayload, parseChatPayload, TruncatedError } = await import('../src/openai.js');
 const { formatAnswer, formatAll, sortAnswers } = await import('../src/format.js');
 const { ANSWER_SCHEMA, buildPrompt } = await import('../src/prompt.js');
 
@@ -284,6 +284,61 @@ test('parse: unusable content throws', () => {
   assert.throws(() => parseQuestions('I could not find any questions.'));
 });
 
+/* ---------------------------------------------------------- payload shapes */
+
+const outputText = (text, extra = {}) => ({ type: 'message', content: [{ type: 'output_text', text }], ...extra });
+
+test('responses: reads the message item, not output[0]', () => {
+  const data = { status: 'completed', output: [{ type: 'reasoning', summary: [] }, outputText('{"questions":[]}')] };
+  assert.equal(parseResponsesPayload(data), '{"questions":[]}');
+});
+
+test('responses: a commentary message never wins over the answer', () => {
+  const data = {
+    status: 'completed',
+    output: [
+      { type: 'reasoning' },
+      outputText('Let me look at the options...', { phase: 'commentary' }),
+      outputText('{"questions":[{"number":"1"}]}', { phase: 'final_answer' }),
+    ],
+  };
+  assert.match(parseResponsesPayload(data), /"number":"1"/);
+});
+
+test('responses: status failed reads the top-level error, not the HTTP envelope', () => {
+  assert.throws(
+    () => parseResponsesPayload({ status: 'failed', error: { code: 'server_error', message: 'Upstream exploded.' } }),
+    /Upstream exploded/,
+  );
+});
+
+test('responses: running out of output tokens is a truncation, not a failure', () => {
+  assert.throws(
+    () => parseResponsesPayload({ status: 'incomplete', incomplete_details: { reason: 'max_output_tokens' } }),
+    TruncatedError,
+  );
+});
+
+test('responses: a refusal is reported as one', () => {
+  const data = { status: 'completed', output: [{ type: 'message', content: [{ type: 'refusal', refusal: 'No.' }] }] };
+  assert.throws(() => parseResponsesPayload(data), /declined/);
+});
+
+test('responses: a gateway that sends output_text is accepted', () => {
+  assert.equal(parseResponsesPayload({ status: 'completed', output: [], output_text: '{"questions":[]}' }), '{"questions":[]}');
+});
+
+test('chat: finish_reason length is a truncation', () => {
+  assert.throws(
+    () => parseChatPayload({ choices: [{ finish_reason: 'length', message: { content: '{"quest' } }] }),
+    TruncatedError,
+  );
+});
+
+test('chat: content comes back verbatim', () => {
+  assert.equal(parseChatPayload({ choices: [{ finish_reason: 'stop', message: { content: '{"questions":[]}' } }] }), '{"questions":[]}');
+});
+
 /* -------------------------------------------------------------- capability */
 
 const caps = () => ({ schema: true, reasoning: true, verbosity: true, maxTokens: true, temperature: true, store: true });
@@ -305,6 +360,18 @@ test('relax: a schema complaint falls back to plain JSON', () => {
   const c = caps();
   relaxCaps({ status: 400, message: "Invalid parameter: 'response_format' of type 'json_schema' is not supported." }, c);
   assert.equal(c.schema, false);
+});
+
+test('relax: an unrelated 400 never turns request retention back on', () => {
+  const c = caps();
+  while (relaxCaps({ status: 400, message: 'something unfamiliar' }, c)) { /* drain */ }
+  assert.equal(c.store, true, 'store must only come off when the server names it');
+});
+
+test('relax: a store complaint does drop it', () => {
+  const c = caps();
+  relaxCaps({ status: 400, param: 'store', message: "Unknown parameter: 'store'." }, c);
+  assert.equal(c.store, false);
 });
 
 test('relax: eventually gives up', () => {
