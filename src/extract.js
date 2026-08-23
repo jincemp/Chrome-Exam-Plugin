@@ -290,16 +290,25 @@
     const origins = new Set();
     try {
       for (const frame of document.querySelectorAll('iframe[src], frame[src]')) {
-        let origin;
+        let src;
         try {
-          origin = new URL(frame.getAttribute('src'), location.href).origin;
+          src = new URL(frame.getAttribute('src'), location.href);
         } catch {
-          continue;
+          continue; // javascript:, malformed, or nothing at all
         }
-        if (!/^https?:$/.test(new URL(origin).protocol)) continue;
+        // about:blank and data: iframes have the literal origin "null".
+        if (!/^https?:$/.test(src.protocol) || src.origin === 'null') continue;
+        const origin = src.origin;
         if (origin === location.origin) continue;
+        const cs = styleOf(frame);
+        if (cs && cs.display === 'none') continue;
+
+        // Skip frames that are measurably too small to hold a quiz. A zero box
+        // means "not laid out yet" (lazy or below the fold), not "tiny", so
+        // those are kept.
         const box = frame.getBoundingClientRect?.();
-        if (box && (box.width < 250 || box.height < 200)) continue; // trackers and ad slots
+        const measured = box && box.width > 0 && box.height > 0;
+        if (measured && (box.width < 250 || box.height < 200)) continue;
         origins.add(origin);
         if (origins.size >= 5) break;
       }

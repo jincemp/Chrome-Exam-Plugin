@@ -58,7 +58,7 @@ function extract(html, { selection = '', url = 'https://example.test/quiz' } = {
   const saved = { window: globalThis.window, document: globalThis.document, location: globalThis.location, Node: globalThis.Node };
   globalThis.window = window;
   globalThis.document = document;
-  globalThis.location = { href: url };
+  globalThis.location = { href: url, origin: new URL(url).origin };
   globalThis.Node = window.Node || { TEXT_NODE: 3, ELEMENT_NODE: 1 };
   try {
     return (0, eval)(EXTRACT_SRC);
@@ -206,6 +206,23 @@ test('extract: short selects contribute their options', () => {
 test('extract: falls back to the body when there is no main landmark', () => {
   const r = extract('<div><p>1. Body only question?</p><p>a) yes</p><p>b) no</p></div>');
   assert.match(r.text, /Body only question/);
+});
+
+test('extract: an about:blank iframe does not hide the real one', () => {
+  const page = `<main><p>Loading...</p>
+    <iframe src="about:blank"></iframe>
+    <iframe src="https://quiz.example.com/embed/42"></iframe>
+  </main>`;
+  assert.deepEqual(extract(page).frameOrigins, ['https://quiz.example.com']);
+});
+
+test('extract: same-origin and non-http frames are not reported', () => {
+  const page = `<main>
+    <iframe src="/local/embed"></iframe>
+    <iframe src="javascript:false"></iframe>
+    <iframe src="data:text/html,hi"></iframe>
+  </main>`;
+  assert.deepEqual(extract(page).frameOrigins, []);
 });
 
 test('extract: image alt text is kept', () => {

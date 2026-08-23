@@ -59,6 +59,7 @@ textarea { display: block; resize: vertical; }
 
 .hint { display: block; margin-top: 6px; color: var(--muted); font-size: 12px; }
 .hint a { color: var(--accent); }
+.hint code { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 11px; }
 
 .check { display: flex; align-items: center; gap: 8px; margin-bottom: 20px; }
 .check input { width: auto; }

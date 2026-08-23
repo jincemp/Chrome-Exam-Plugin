@@ -124,12 +124,17 @@ $('test').addEventListener('click', async () => {
   }
 });
 
-// Do not lose a half-filled form. Permission prompts need a gesture, so the
-// base URL is deliberately left out of this autosave.
+// Do not lose a half-filled form. Two things are deliberately left out of this
+// autosave: the base URL, because a permission prompt needs a click; and an
+// empty API key, which would otherwise erase a stored one.
 window.addEventListener('beforeunload', () => {
-  const { baseUrl, ...rest } = readForm();
+  if (!loaded) return; // the form has not been populated yet - it is all blanks
+  const { baseUrl, apiKey, ...rest } = readForm();
   void baseUrl;
-  setSettings(rest);
+  setSettings(apiKey ? { ...rest, apiKey } : rest);
 });
 
-load();
+/** Guards the autosave: closing the tab before load() finishes must be a no-op. */
+let loaded = false;
+
+load().then(() => { loaded = true; });

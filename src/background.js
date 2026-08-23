@@ -92,7 +92,7 @@ async function markFailed(tabId) {
 /* -------------------------------------------------------------- page read */
 
 /** Chrome refuses injection on these; say which one rather than guessing. */
-function describeUnsupported(url) {
+async function describeUnsupported(url) {
   if (!url) return null;
   if (/^chrome:\/\//.test(url)) return 'Chrome blocks extensions on chrome:// pages.';
   if (/^(chrome-extension|devtools|view-source|about):/.test(url)) return 'Chrome blocks extensions on this kind of page.';
@@ -100,7 +100,13 @@ function describeUnsupported(url) {
     return 'Chrome blocks extensions on the Chrome Web Store.';
   }
   if (/^file:\/\//.test(url)) {
-    return 'Local files need "Allow access to file URLs" on this extension\'s card in chrome://extensions.';
+    // The user can turn this on, and the README tells them how - so only refuse
+    // when Chrome confirms it is off. An unknown answer defers to the injection.
+    let allowed = true;
+    try {
+      allowed = await chrome.extension.isAllowedFileSchemeAccess();
+    } catch { /* API unavailable: let executeScript speak for itself */ }
+    return allowed ? null : 'Local files need "Allow access to file URLs" on this extension\'s card in chrome://extensions.';
   }
   if (/\.pdf(\?|#|$)/i.test(url)) return 'PDFs are rendered by Chrome\'s own viewer, which extensions cannot read.';
   return null;
@@ -112,7 +118,7 @@ const UNSUPPORTED_HINT =
 /** Runs extract.js in every frame and stitches the frames together. */
 async function readPage(tabId) {
   try {
-    const hint = describeUnsupported((await chrome.tabs.get(tabId))?.url);
+    const hint = await describeUnsupported((await chrome.tabs.get(tabId))?.url);
     if (hint) throw new OpenAIError('Cannot read this page.', { kind: 'page', hint });
   } catch (err) {
     if (err instanceof OpenAIError) throw err; // tabs.get failing is not fatal
