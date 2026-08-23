@@ -83,12 +83,23 @@ function renderAnswers(job) {
 
   const meta = [];
   if (answers.length) meta.push(`${answers.length} answer${answers.length === 1 ? '' : 's'}`);
-  if (job.meta?.missingChunks) meta.push(`${job.meta.missingChunks} part(s) failed`);
+  if (job.meta?.missingChunks) {
+    meta.push(`${job.meta.missingChunks} part${job.meta.missingChunks === 1 ? '' : 's'} failed`);
+  }
   if (job.meta?.truncated) meta.push('page truncated');
   if (job.meta?.windowed) meta.push('scroll and re-run for more');
   if (job.meta?.unreadable) meta.push('some content is images');
   if (job.meta?.model) meta.push(job.meta.model);
   $('answers-meta').textContent = meta.join(' · ');
+
+  // A partial run must say what went wrong, not just that something did.
+  const partial = job.meta?.partialError;
+  if (partial?.message) {
+    const li = document.createElement('li');
+    li.className = 'why partial';
+    li.textContent = [partial.message, partial.hint].filter(Boolean).join(' ');
+    list.append(li);
+  }
 
   show('answers');
 }
@@ -202,6 +213,9 @@ $('grant').addEventListener('click', async () => {
 $('rerun').addEventListener('click', () => start(true));
 $('cancel').addEventListener('click', async () => {
   await send({ type: 'cancel', tabId: tab.id });
+  // The busy panel is rendered optimistically on click, before the worker has
+  // written anything, so there may be no storage change to bring us back.
+  renderIdle('');
 });
 
 $('copy').addEventListener('click', async () => {

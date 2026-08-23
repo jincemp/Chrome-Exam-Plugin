@@ -41,7 +41,7 @@ globalThis.chrome = {
   scripting: {},
 };
 
-const { chunkText } = await import('../src/background.js');
+const { chunkText, mergeAnswers } = await import('../src/background.js');
 const { parseQuestions, relaxCaps, parseResponsesPayload, parseChatPayload, classifyError, TruncatedError } = await import('../src/openai.js');
 const { formatAnswer, formatAll, sortAnswers } = await import('../src/format.js');
 const { ANSWER_SCHEMA, buildPrompt } = await import('../src/prompt.js');
@@ -176,6 +176,69 @@ test('extract: picks up a data-answer attribute as a hint', () => {
   assert.match(extract(QUIZ).hints, /\bc\b/);
 });
 
+test('extract: every hint says which question it belongs to', () => {
+  const page = `<main>
+    <div class="question" data-answer="c"><p>1. First question?</p></div>
+    <div class="question" data-answer="a"><p>2. Second question?</p></div>
+    <div class="question" data-answer="c"><p>3. Third question?</p></div>
+  </main>`;
+  const lines = extract(page).hints.split('\n').filter(Boolean);
+  assert.deepEqual(lines, ['Q1 -> c', 'Q2 -> a', 'Q3 -> c'], 'a bare list of letters would de-duplicate into a misaligned key');
+});
+
+test('extract: site and API keys are never collected as hints', () => {
+  const page = `<main>
+    <div data-site-key="6LeIxAcTAAAAAJcZVRqyHh71UMIEGNQ_MXjiZKhI"></div>
+    <div data-api-key="sk-proj-abc123def456ghi789jkl012mno345pqr678"></div>
+    <div data-session-key="9f8e7d6c5b4a39281706f5e4d3c2b1a0"></div>
+    <p>1. A question?</p>
+  </main>`;
+  const { hints } = extract(page);
+  assert.doesNotMatch(hints, /6LeIxAcT/);
+  assert.doesNotMatch(hints, /sk-proj/);
+  assert.doesNotMatch(hints, /9f8e7d6c/);
+});
+
+test('extract: a preformatted block keeps its line structure', () => {
+  const page = `<main><pre>1. What is the maximum voltage drop?
+a) 1%
+b) 3%
+c) 5%</pre></main>`;
+  const lines = extract(page).text.split('\n').map((l) => l.trim()).filter(Boolean);
+  assert.ok(lines.includes('a) 1%'), lines.join(' // '));
+  assert.ok(lines.includes('b) 3%'), lines.join(' // '));
+});
+
+test('extract: a question stem inside a nested header survives', () => {
+  const page = `<body><header><h1>Exam site</h1></header><main>
+    <div class="question">
+      <header><h3>1. Which conductor is grounded?</h3></header>
+      <ul><li>a) the hot</li><li>b) the neutral</li></ul>
+    </div>
+  </main><footer>Copyright</footer></body>`;
+  const r = extract(page);
+  assert.match(r.text, /Which conductor is grounded/);
+  assert.doesNotMatch(r.text, /Exam site/);
+});
+
+test('extract: a long answer dropdown keeps all of its options', () => {
+  const options = [
+    'The neutral conductor carries the unbalanced current between the phase conductors.',
+    'The equipment grounding conductor carries the unbalanced current at all times.',
+    'The ungrounded conductor carries the unbalanced current under normal conditions.',
+    'No conductor carries unbalanced current in a multiwire branch circuit.',
+    'Both the neutral and the equipment grounding conductor share the unbalanced current.',
+  ];
+  const page = `<main><p>1. Which statement is correct?</p><select>${options.map((o) => `<option>${o}</option>`).join('')}</select></main>`;
+  const { text } = extract(page);
+  for (const o of options) assert.match(text, new RegExp(o.slice(0, 30).replace(/[.*+?^${}()|[\]\\]/g, '\\$&')));
+});
+
+test('extract: an unchosen dropdown is not reported as selected', () => {
+  const page = '<main><p>1. Pick one</p><select><option>Alpha</option><option>Beta</option></select></main>';
+  assert.doesNotMatch(extract(page).text, /\[selected\]/);
+});
+
 test('extract: a selection wins over the page', () => {
   const r = extract(QUIZ, { selection: '7. Which conductor is grounded?\na) the hot\nb) the neutral' });
   assert.match(r.selection, /Which conductor is grounded/);
@@ -280,6 +343,45 @@ test('chunk: text with no numbering still splits', () => {
   const para = 'Some prose about grounding electrodes.\n\n';
   const chunks = chunkText(para.repeat(200), 1000);
   assert.ok(chunks.length > 1);
+});
+
+/* ------------------------------------------------------------------- merge */
+
+const answer = (number, extra = {}) => ({ number: String(number), label: 'a', answer: `answer ${number}`, why: '', confidence: 'high', ...extra });
+
+test('merge: one chunk passes straight through', () => {
+  const merged = mergeAnswers([[answer(1), answer(2)]]);
+  assert.deepEqual(merged.map((a) => a.number), ['1', '2']);
+  assert.equal('part' in merged[0], false, 'the chunk index is an implementation detail');
+});
+
+test('merge: page numbering that continues across chunks is preserved', () => {
+  const merged = mergeAnswers([[answer(1), answer(2)], [answer(3), answer(4)]]);
+  assert.deepEqual(merged.map((a) => a.number), ['1', '2', '3', '4']);
+});
+
+test('merge: an unnumbered page restarting at 1 per chunk keeps every answer', () => {
+  const merged = mergeAnswers([
+    [answer(1, { answer: 'chunk one first' }), answer(2, { answer: 'chunk one second' })],
+    [answer(1, { answer: 'chunk two first' }), answer(2, { answer: 'chunk two second' })],
+  ]);
+  assert.equal(merged.length, 4, 'nothing may be discarded as a duplicate');
+  assert.deepEqual(merged.map((a) => a.number), ['1', '2', '3', '4']);
+  assert.deepEqual(merged.map((a) => a.answer), ['chunk one first', 'chunk one second', 'chunk two first', 'chunk two second']);
+});
+
+test('merge: a question straddling a boundary is answered once, best first', () => {
+  const merged = mergeAnswers([
+    [answer(1), answer(2, { confidence: 'low', answer: 'half a question' })],
+    [answer(2, { confidence: 'high', answer: 'the whole question' }), answer(3)],
+  ]);
+  assert.deepEqual(merged.map((a) => a.number), ['1', '2', '3']);
+  assert.equal(merged.find((a) => a.number === '2').answer, 'the whole question');
+});
+
+test('merge: a failed chunk leaves a hole without shifting the rest', () => {
+  const groups = [[answer(1)], undefined, [answer(3)]];
+  assert.deepEqual(mergeAnswers(groups).map((a) => a.number), ['1', '3']);
 });
 
 /* ------------------------------------------------------------------- parse */

@@ -34,7 +34,9 @@
     'MAIN', 'NAV', 'OL', 'P', 'PRE', 'SECTION', 'SUMMARY', 'TABLE', 'TR', 'UL',
   ]);
 
-  const HINT_ATTR_RE = /(^|[-_ ])(answer|correct|solution|explanation|rationale|key)([-_ ]|$)/i;
+  // Deliberately narrow. An earlier version accepted a bare "key", which matched
+  // data-site-key and data-api-key and would have posted them to OpenAI.
+  const HINT_ATTR_RE = /(^|[-_ ])((answer|solution)([-_ ]?key)?|correct|explanation|rationale)([-_ ]|$)/i;
   const QUESTION_LINE_RE = /^\s*(?:q(?:uestion)?\s*[.:#-]?\s*)?(\d{1,3})\s*[.):\]]\s+\S/i;
   const OPTION_LINE_RE = /^\s*[(\[]?([a-jA-J]|[ivxIVX]{1,4})[.):\]]\s+\S/;
 
@@ -70,21 +72,36 @@
 
   const isBlock = (el, cs) => (cs ? !INLINE_DISPLAYS.has(cs.display) : BLOCK_TAGS.has(el.tagName));
 
+  // A <header> nested in content is a section heading, not the site banner - and
+  // it routinely holds the question stem. Per the HTML spec these tags are only
+  // landmarks when they are not inside sectioning content.
+  const CONTENT_ANCESTORS = 'article, section, form, li, td, fieldset, [class*="question" i], [data-question], [data-question-id]';
+
   const looksLikeBoilerplate = (el) => {
-    if (BOILERPLATE_TAGS.has(el.tagName)) return true;
     const role = el.getAttribute && el.getAttribute('role');
-    return !!role && BOILERPLATE_ROLES.has(role.toLowerCase());
+    if (role && BOILERPLATE_ROLES.has(role.toLowerCase())) return true;
+    if (el.tagName === 'NAV') return true;
+    if (!BOILERPLATE_TAGS.has(el.tagName)) return false;
+    try {
+      return !el.parentElement?.closest(CONTENT_ANCESTORS);
+    } catch {
+      return true;
+    }
   };
 
   /* ---------------------------------------------------------------- walking */
 
   // `out` collects string fragments; '\n' entries are collapsed at the end.
-  const walk = (node, out, opts, depth) => {
+  const PRE_WHITESPACE_RE = /^(pre|pre-wrap|pre-line|break-spaces)$/;
+
+  const walk = (node, out, opts, depth, inPre) => {
     if (depth > 300 || out.length > 200000) return;
 
     if (node.nodeType === Node.TEXT_NODE) {
       const t = node.nodeValue;
-      if (t && /\S/.test(t)) out.push(t.replace(/\s+/g, ' '));
+      if (!t || !/\S/.test(t)) return;
+      // Inside <pre> the newlines are the only line structure there is.
+      out.push(inPre ? t.replace(/[^\S\n]+/g, ' ') : t.replace(/\s+/g, ' '));
       return;
     }
     if (node.nodeType !== Node.ELEMENT_NODE) return;
@@ -98,7 +115,7 @@
 
     // A cell separates with a pipe and lets its row supply the line break; <br>
     // has no box of its own but always breaks.
-    const cell = el.tagName === 'TD' || el.tagName === 'TH';
+    const cell = el.tagName === 'TD' || el.tagName === 'TH' || cs?.display === 'table-cell';
     const block = !cell && (el.tagName === 'BR' || isBlock(el, cs));
     if (block) out.push('\n');
     if (cell) out.push(' | ');
@@ -126,19 +143,25 @@
       return;
     }
     if (el.tagName === 'SELECT') {
-      // A short dropdown is usually an answer picker; a long one is a site widget.
       const opts = Array.from(el.options || el.querySelectorAll('option'));
       const optionText = (o) => String(o.text ?? o.textContent ?? '').trim();
       const joined = opts.map(optionText).filter(Boolean).join(' / ');
-      if (opts.length <= 12 && joined.length <= 300) {
+
+      // A browser reports option 0 as selected even when nobody chose it, so
+      // only call it a selection when it cannot be the default.
+      const authorDefault = opts.some((o) => o.hasAttribute?.('selected'));
+      const realSelection = el.selectedIndex > 0 || authorDefault;
+      const marker = (o) => (realSelection && o.selected ? '[selected] ' : '');
+
+      // Answer pickers list every choice; a country picker is a site widget.
+      if (opts.length <= 60 && joined.length <= 4000) {
         out.push('\n');
         for (const o of opts) {
           const t = optionText(o);
-          if (t) out.push(`${o.selected ? '[selected] ' : ''}${t}\n`);
+          if (t) out.push(`${marker(o)}${t}\n`);
         }
-      } else {
-        const chosen = opts.find((o) => o.selected)
-          || (el.selectedIndex >= 0 ? opts[el.selectedIndex] : null);
+      } else if (realSelection) {
+        const chosen = opts.find((o) => o.selected) || opts[el.selectedIndex];
         if (chosen) out.push(`[selected] ${optionText(chosen)}`);
       }
       return;
@@ -149,10 +172,13 @@
       return;
     }
 
+    // White-space handling is inherited, so it is tracked down the walk.
+    const preformatted = cs ? PRE_WHITESPACE_RE.test(cs.whiteSpace) : (inPre || el.tagName === 'PRE');
+
     if (el.shadowRoot) {
-      for (const child of el.shadowRoot.childNodes) walk(child, out, opts, depth + 1);
+      for (const child of el.shadowRoot.childNodes) walk(child, out, opts, depth + 1, preformatted);
     }
-    for (const child of el.childNodes) walk(child, out, opts, depth + 1);
+    for (const child of el.childNodes) walk(child, out, opts, depth + 1, preformatted);
 
     if (block) out.push('\n');
   };
@@ -166,7 +192,7 @@
 
   const textOf = (root, opts) => {
     const out = [];
-    walk(root, out, opts, 0);
+    walk(root, out, opts, 0, false);
     return tidy(out);
   };
 
@@ -202,6 +228,10 @@
 
     const bodyLen = (body.textContent || '').length;
     for (const c of candidates) {
+      // A single question card is not the quiz; fall back to the body instead.
+      try {
+        if (c.matches?.(QUESTION_CONTAINER_SELECTOR)) continue;
+      } catch { /* selector unsupported here */ }
       const len = (c.textContent || '').length;
       if (len > 400 && len > bodyLen * 0.35) return c;
     }
@@ -213,14 +243,33 @@
   // Some quiz pages ship the correct answer in the markup (a hidden div, a
   // data-answer attribute, a collapsed "Show answer" panel). We surface a small,
   // capped sample of that as corroboration - never as the sole source of truth.
+  /** Anything long, unbroken and mixed-case with digits is a token, not an answer. */
+  const looksLikeSecret = (v) => v.length > 40 && !/\s/.test(v) && /[A-Za-z]/.test(v) && /\d/.test(v);
+
+  /** Which question does this element belong to? Unattributed hints are worse than none. */
+  const questionLabelFor = (el) => {
+    try {
+      const container = el.closest(QUESTION_CONTAINER_SELECTOR);
+      const text = ((container || el).textContent || '').replace(/\s+/g, ' ').trim();
+      const numbered = /^(?:q(?:uestion)?\s*[.:#-]?\s*)?(\d{1,3})\s*[.):\]]/i.exec(text);
+      if (numbered) return `Q${numbered[1]}`;
+      return text.slice(0, 60);
+    } catch {
+      return '';
+    }
+  };
+
   const collectHints = () => {
     const hints = [];
     const seen = new Set();
-    const push = (s) => {
-      const v = (s || '').replace(/\s+/g, ' ').trim();
-      if (!v || v.length > 300 || seen.has(v)) return;
-      seen.add(v);
-      hints.push(v);
+
+    const push = (label, value) => {
+      const v = (value || '').replace(/\s+/g, ' ').trim();
+      if (!v || v.length > 300 || looksLikeSecret(v)) return;
+      const line = label ? `${label} -> ${v}` : v;
+      if (seen.has(line)) return;
+      seen.add(line);
+      hints.push(line);
     };
 
     try {
@@ -230,13 +279,15 @@
         const el = all[i];
         for (const attr of el.attributes) {
           if (!HINT_ATTR_RE.test(attr.name)) continue;
-          if (attr.name.startsWith('data-') || attr.name === 'class' || attr.name === 'id') {
-            if (attr.name === 'class' || attr.name === 'id') {
-              // Class/id only marks the container - its text is the hint.
-              if (!isVisible(el, styleOf(el))) push(el.textContent);
-            } else {
-              push(attr.value);
-            }
+
+          if (attr.name.startsWith('data-')) {
+            // "c" means nothing without knowing which question it answers, and a
+            // list of bare letters de-duplicates into a misaligned answer key.
+            const label = questionLabelFor(el);
+            if (label) push(label, attr.value);
+          } else if (attr.name === 'class' || attr.name === 'id') {
+            // The attribute only marks the container; its hidden text is the hint.
+            if (!isVisible(el, styleOf(el))) push(questionLabelFor(el), el.textContent);
           }
         }
       }
@@ -379,7 +430,7 @@
   let text = textOf(root, { dropBoilerplate: true });
   // Stripping furniture occasionally strips the page. Only put it back when what
   // is left is both short and question-free.
-  if (text.length < 200 && countQuestions(text) === 0 && document.body) {
+  if (text.length < 200 && countFromText(text) === 0 && document.body) {
     text = textOf(document.body, { dropBoilerplate: false });
   }
 

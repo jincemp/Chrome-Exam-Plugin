@@ -151,13 +151,18 @@ async function readPage(tabId) {
     });
   }
 
+  // The top frame may have no text of its own (a shell around an iframe), in
+  // which case it is not in `frames` at all - but it is still the frame whose
+  // sub-frame list and title we want.
+  const allResults = results.map((r) => r?.result).filter(Boolean);
+  const topFrame = allResults.find((r) => r.isTop);
   const top = frames.find((f) => f.isTop) || frames[0];
 
   // A deliberate selection beats everything else on the page.
   if (top.selection) {
     return {
-      url: top.url,
-      title: top.title,
+      url: (topFrame || top).url,
+      title: (topFrame || top).title || top.title,
       text: top.selection,
       hints: top.hints || '',
       questionCount: top.questionCount,
@@ -176,8 +181,7 @@ async function readPage(tabId) {
 
   // Reached nothing and there is an embedded frame from another origin? That is
   // where the quiz lives, and activeTab does not cover it.
-  const topFrame = results.map((r) => r?.result).find((r) => r?.isTop) || top;
-  const blocked = (topFrame.frameOrigins || []).filter((origin) => !frames.some((f) => f.url?.startsWith(origin)));
+  const blocked = ((topFrame || top).frameOrigins || []).filter((origin) => !frames.some((f) => f.url?.startsWith(origin)));
   // A page with real content and a stray ad frame is not this case; a page that
   // is little more than a wrapper around someone else's quiz is.
   if (questionCount === 0 && text.length < 1500 && blocked.length) {
@@ -189,8 +193,8 @@ async function readPage(tabId) {
   }
 
   return {
-    url: top.url,
-    title: top.title,
+    url: (topFrame || top).url,
+    title: (topFrame || top).title || top.title,
     text,
     hints: top.hints || '',
     questionCount,
@@ -255,16 +259,67 @@ export function chunkText(text, maxChars = CHUNK_CHARS) {
 
 const CONFIDENCE_RANK = { high: 3, medium: 2, low: 1 };
 
-function mergeAnswers(groups) {
-  const byNumber = new Map();
-  for (const answer of groups.flat()) {
-    const key = answer.number || `#${byNumber.size + 1}`;
-    const existing = byNumber.get(key);
-    if (!existing) { byNumber.set(key, answer); continue; }
+/**
+ * Chunks never overlap, so two chunks reporting the same question number means
+ * one of two things: a question straddled the boundary and was answered twice,
+ * or the page carries no numbering and each chunk numbered itself from 1. The
+ * second case is the dangerous one - keying on the number alone would throw
+ * away most of a long unnumbered quiz - so answers are keyed per chunk and
+ * renumbered end to end when the numbering turns out to be per-chunk.
+ */
+export function mergeAnswers(groups) {
+  const byKey = new Map();
 
-    const better = CONFIDENCE_RANK[answer.confidence] - CONFIDENCE_RANK[existing.confidence];
-    if (better > 0 || (better === 0 && answer.answer.length > existing.answer.length)) {
-      byNumber.set(key, answer);
+  groups.forEach((group, part) => {
+    for (const answer of group || []) {
+      const entry = { ...answer, part };
+      const key = `${part}|${answer.number}`;
+      const existing = byKey.get(key);
+      if (!existing) { byKey.set(key, entry); continue; }
+
+      const better = CONFIDENCE_RANK[entry.confidence] - CONFIDENCE_RANK[existing.confidence];
+      if (better > 0 || (better === 0 && entry.answer.length > existing.answer.length)) {
+        byKey.set(key, entry);
+      }
+    }
+  });
+
+  const answers = [...byKey.values()];
+  const parts = new Set(answers.map((a) => a.part));
+  if (parts.size < 2) return answers.map(({ part, ...a }) => a);
+
+  // A question straddling a boundary repeats one number per boundary. Numbering
+  // that restarted per chunk repeats many. Count the overlaps to tell them apart.
+  const partsPerNumber = new Map();
+  for (const a of answers) {
+    if (!partsPerNumber.has(a.number)) partsPerNumber.set(a.number, new Set());
+    partsPerNumber.get(a.number).add(a.part);
+  }
+  const overlaps = [...partsPerNumber.values()].filter((where) => where.size > 1).length;
+  const restarts = overlaps > parts.size - 1;
+
+  if (!restarts) {
+    // Real page numbering: a repeat within one part is a straddled question.
+    return dedupeByNumber(answers);
+  }
+
+  return answers
+    .sort((x, y) => x.part - y.part || numericOrder(x.number, y.number))
+    .map(({ part, ...a }, i) => ({ ...a, number: String(i + 1) }));
+}
+
+const numericOrder = (a, b) => {
+  const n = (v) => { const m = /^(\d+)/.exec(String(v)); return m ? Number(m[1]) : Number.MAX_SAFE_INTEGER; };
+  return n(a) - n(b) || String(a).localeCompare(String(b));
+};
+
+function dedupeByNumber(answers) {
+  const byNumber = new Map();
+  for (const { part, ...answer } of answers) {
+    void part;
+    const existing = byNumber.get(answer.number);
+    if (!existing || CONFIDENCE_RANK[answer.confidence] > CONFIDENCE_RANK[existing.confidence]) {
+      byNumber.set(answer.number, answer);
     }
   }
   return [...byNumber.values()];
@@ -329,7 +384,7 @@ async function runJob(tabId) {
     const chunks = chunkText(page.text);
     await update({
       status: 'thinking',
-      url: page.url,
+      url: tabUrl || page.url,
       startedAt: Date.now(),
       progress: { done: 0, total: chunks.length },
     });
@@ -346,7 +401,7 @@ async function runJob(tabId) {
         if (!controller.signal.aborted) {
           await update({
             status: 'thinking',
-            url: page.url,
+            url: tabUrl || page.url,
             progress: { done, total: chunks.length },
           });
         }
@@ -364,15 +419,16 @@ async function runJob(tabId) {
     const finished = groups.filter(Boolean);
     if (failure && !finished.length) throw failure.reason;
 
-    const answers = mergeAnswers(finished);
+    const answers = mergeAnswers(groups);
     await update({
       status: 'done',
-      url: page.url,
+      url: tabUrl || page.url,
       answers,
       meta: {
         model: settings.model,
         chunks: chunks.length,
         missingChunks: chunks.length - finished.length,
+        partialError: failure ? { message: failure.reason?.message || 'Part of the page failed.', hint: failure.reason?.hint || '' } : null,
         truncated: page.truncated,
         windowed: page.windowed,
         unreadable: page.unreadable,
@@ -492,10 +548,8 @@ chrome.tabs.onUpdated.addListener(async (tabId, changeInfo) => {
   // Same document, different anchor: the questions have not changed.
   if (changeInfo.url && job && pageKey(job.url) === pageKey(changeInfo.url)) return;
 
-  // A bare 'loading' tick while we are working on this tab is the page still
-  // settling, not the user navigating away.
-  if (!changeInfo.url && running.has(tabId)) return;
-
+  // A bare 'loading' tick is a same-URL reload. The document we read no longer
+  // exists, so a run against it must not publish its answers as current.
   running.get(tabId)?.abort();
   running.delete(tabId);
   await clearJob(tabId);
