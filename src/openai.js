@@ -24,7 +24,7 @@ const REASONING_RE = /^(o\d|gpt-[5-9])/i;
 const endpointCache = new Map();
 
 export class OpenAIError extends Error {
-  constructor(message, { status = 0, code = '', param = '', hint = '', retryable = false, kind = 'api' } = {}) {
+  constructor(message, { status = 0, code = '', param = '', hint = '', retryable = false, kind = 'api', origins = [] } = {}) {
     super(message);
     this.name = 'OpenAIError';
     this.status = status;
@@ -33,6 +33,7 @@ export class OpenAIError extends Error {
     this.hint = hint;
     this.retryable = retryable;
     this.kind = kind;
+    this.origins = origins;
   }
 }
 
@@ -95,6 +96,11 @@ async function toError(response, settings) {
       hint: outOfCredit
         ? 'Add credit at platform.openai.com/settings/organization/billing.'
         : 'Waiting a few seconds usually clears it.',
+    });
+  }
+  if (status === 405 || status === 501) {
+    return new OpenAIError(detail || 'That endpoint is not available here.', {
+      status, code, param, kind: 'endpoint', hint: 'Set the endpoint explicitly in advanced settings.',
     });
   }
   if (status >= 500) {

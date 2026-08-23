@@ -12,7 +12,7 @@
 (() => {
   const MAX_CHARS = 60000;
   const MAX_HINT_CHARS = 2000;
-  const MIN_SELECTION_CHARS = 60;
+  const MIN_SELECTION_CHARS = 25;
 
   // Never contributes text.
   const SKIP_TAGS = new Set([
@@ -84,7 +84,9 @@
     if (el.tagName === 'INPUT') {
       const type = (el.getAttribute('type') || 'text').toLowerCase();
       if (type === 'radio' || type === 'checkbox') {
-        if (el.checked) out.push('[selected] ');
+        // The live property is the truth; the attribute is only the default.
+        const checked = typeof el.checked === 'boolean' ? el.checked : el.hasAttribute('checked');
+        if (checked) out.push('[selected] ');
         return; // the option's wording lives in the associated <label>
       }
       if (type === 'button' || type === 'submit' || type === 'reset') {
@@ -98,16 +100,18 @@
     }
     if (el.tagName === 'SELECT') {
       // A short dropdown is usually an answer picker; a long one is a site widget.
-      const opts = Array.from(el.options || []);
-      const joined = opts.map((o) => o.text.trim()).filter(Boolean).join(' / ');
+      const opts = Array.from(el.options || el.querySelectorAll('option'));
+      const optionText = (o) => String(o.text ?? o.textContent ?? '').trim();
+      const joined = opts.map(optionText).filter(Boolean).join(' / ');
       if (opts.length <= 12 && joined.length <= 300) {
         out.push('\n');
         for (const o of opts) {
-          const t = o.text.trim();
+          const t = optionText(o);
           if (t) out.push(`${o.selected ? '[selected] ' : ''}${t}\n`);
         }
-      } else if (el.selectedIndex >= 0 && el.options[el.selectedIndex]) {
-        out.push(`[selected] ${el.options[el.selectedIndex].text.trim()}`);
+      } else {
+        const chosen = opts.find((o) => o.selected) || opts[Math.max(0, el.selectedIndex || 0)];
+        if (chosen) out.push(`[selected] ${optionText(chosen)}`);
       }
       return;
     }
@@ -168,7 +172,7 @@
     const seen = new Set();
     const push = (s) => {
       const v = (s || '').replace(/\s+/g, ' ').trim();
-      if (v.length < 2 || v.length > 300 || seen.has(v)) return;
+      if (!v || v.length > 300 || seen.has(v)) return;
       seen.add(v);
       hints.push(v);
     };
@@ -210,6 +214,32 @@
     return numbers.size;
   };
 
+  /* ------------------------------------------------------------- sub-frames */
+
+  // activeTab grants only this page's origin, so an embedded quiz from another
+  // origin never reaches us. Report those origins so the user can be offered
+  // access to them explicitly.
+  const crossOriginFrames = () => {
+    const origins = new Set();
+    try {
+      for (const frame of document.querySelectorAll('iframe[src], frame[src]')) {
+        let origin;
+        try {
+          origin = new URL(frame.getAttribute('src'), location.href).origin;
+        } catch {
+          continue;
+        }
+        if (!/^https?:$/.test(new URL(origin).protocol)) continue;
+        if (origin === location.origin) continue;
+        const box = frame.getBoundingClientRect?.();
+        if (box && (box.width < 120 || box.height < 120)) continue; // trackers and ad slots
+        origins.add(origin);
+        if (origins.size >= 5) break;
+      }
+    } catch { /* best-effort */ }
+    return [...origins];
+  };
+
   /* -------------------------------------------------------------------- run */
 
   const isTop = window === window.top;
@@ -221,7 +251,11 @@
 
   const root = pickRoot();
   let text = textOf(root, { dropBoilerplate: true });
-  if (text.length < 200 && document.body) text = textOf(document.body, { dropBoilerplate: false });
+  // Stripping furniture occasionally strips the page. Only put it back when what
+  // is left is both short and question-free.
+  if (text.length < 200 && countQuestions(text) === 0 && document.body) {
+    text = textOf(document.body, { dropBoilerplate: false });
+  }
 
   let truncated = false;
   if (text.length > MAX_CHARS) {
@@ -232,6 +266,7 @@
 
   return {
     ok: true,
+    frameOrigins: isTop ? crossOriginFrames() : [],
     isTop,
     url: location.href,
     title: document.title || '',

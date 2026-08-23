@@ -53,11 +53,33 @@ async function markFailed(tabId) {
 
 /* -------------------------------------------------------------- page read */
 
+/** Chrome refuses injection on these; say which one rather than guessing. */
+function describeUnsupported(url) {
+  if (!url) return null;
+  if (/^chrome:\/\//.test(url)) return 'Chrome blocks extensions on chrome:// pages.';
+  if (/^(chrome-extension|devtools|view-source|about):/.test(url)) return 'Chrome blocks extensions on this kind of page.';
+  if (/^https:\/\/(chromewebstore\.google\.com|chrome\.google\.com\/webstore)/.test(url)) {
+    return 'Chrome blocks extensions on the Chrome Web Store.';
+  }
+  if (/^file:\/\//.test(url)) {
+    return 'Local files need "Allow access to file URLs" on this extension\'s card in chrome://extensions.';
+  }
+  if (/\.pdf(\?|#|$)/i.test(url)) return 'PDFs are rendered by Chrome\'s own viewer, which extensions cannot read.';
+  return null;
+}
+
 const UNSUPPORTED_HINT =
   'Chrome blocks extensions on this page. Try it on a normal http(s) page.';
 
 /** Runs extract.js in every frame and stitches the frames together. */
 async function readPage(tabId) {
+  try {
+    const hint = describeUnsupported((await chrome.tabs.get(tabId))?.url);
+    if (hint) throw new OpenAIError('Cannot read this page.', { kind: 'page', hint });
+  } catch (err) {
+    if (err instanceof OpenAIError) throw err; // tabs.get failing is not fatal
+  }
+
   let results;
   try {
     results = await chrome.scripting.executeScript({
@@ -106,13 +128,25 @@ async function readPage(tabId) {
     .slice(0, 4);
 
   const text = [top.text, ...others.map((f) => f.text)].filter(Boolean).join('\n\n');
+  const questionCount = Math.max(top.questionCount, ...others.map((f) => f.questionCount), 0);
+
+  // Reached nothing and there is an embedded frame from another origin? That is
+  // where the quiz lives, and activeTab does not cover it.
+  const blocked = (top.frameOrigins || []).filter((origin) => !frames.some((f) => f.url?.startsWith(origin)));
+  if (questionCount === 0 && blocked.length) {
+    throw new OpenAIError('The questions are inside an embedded frame.', {
+      kind: 'frames',
+      hint: 'Chrome needs your permission to read it.',
+      origins: blocked,
+    });
+  }
 
   return {
     url: top.url,
     title: top.title,
     text,
     hints: top.hints || '',
-    questionCount: Math.max(top.questionCount, ...others.map((f) => f.questionCount), 0),
+    questionCount,
     truncated: frames.some((f) => f.truncated),
     fromSelection: false,
   };
@@ -151,6 +185,15 @@ export function chunkText(text, maxChars = CHUNK_CHARS) {
       current = [];
       size = 0;
     }
+    if (line.length > maxChars) {
+      // One unbroken line longer than the whole budget: split it mid-line.
+      for (let at = 0; at < line.length; at += maxChars) {
+        if (current.length) { chunks.push(current.join('\n')); current = []; size = 0; }
+        chunks.push(line.slice(at, at + maxChars));
+      }
+      continue;
+    }
+
     current.push(line);
     size += line.length + 1;
   }
@@ -168,7 +211,10 @@ function mergeAnswers(groups) {
   for (const answer of groups.flat()) {
     const key = answer.number || `#${byNumber.size + 1}`;
     const existing = byNumber.get(key);
-    if (!existing || CONFIDENCE_RANK[answer.confidence] > CONFIDENCE_RANK[existing.confidence]) {
+    if (!existing) { byNumber.set(key, answer); continue; }
+
+    const better = CONFIDENCE_RANK[answer.confidence] - CONFIDENCE_RANK[existing.confidence];
+    if (better > 0 || (better === 0 && answer.answer.length > existing.answer.length)) {
       byNumber.set(key, answer);
     }
   }
@@ -255,8 +301,15 @@ async function runJob(tabId) {
       }
     };
 
-    await Promise.all(Array.from({ length: Math.min(MAX_PARALLEL, chunks.length) }, worker));
+    const outcomes = await Promise.allSettled(
+      Array.from({ length: Math.min(MAX_PARALLEL, chunks.length) }, worker),
+    );
     if (controller.signal.aborted) return;
+
+    // Every worker shares one signal, so a real failure shows up in all of them;
+    // surface the first one rather than reporting a half-empty answer sheet.
+    const failure = outcomes.find((o) => o.status === 'rejected');
+    if (failure) throw failure.reason;
 
     const answers = mergeAnswers(groups.filter(Boolean));
     await update({
@@ -278,7 +331,7 @@ async function runJob(tabId) {
       return;
     }
     const error = err instanceof OpenAIError
-      ? { message: err.message, hint: err.hint, kind: err.kind }
+      ? { message: err.message, hint: err.hint, kind: err.kind, origins: err.origins || [] }
       : { message: err?.message || 'Something went wrong.', hint: '' };
     let url = '';
     try {
@@ -364,9 +417,19 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
 /* ------------------------------------------------------------ tab lifecycle */
 
 chrome.tabs.onUpdated.addListener(async (tabId, changeInfo) => {
-  if (!changeInfo.url) return; // ignore title/favicon churn
+  // A URL change, or a reload that reports only a status change.
+  if (!changeInfo.url && changeInfo.status !== 'loading') return;
+
   const job = await getJob(tabId);
-  if (job && pageKey(job.url) === pageKey(changeInfo.url)) return; // same page, new hash
+  if (!job && !running.has(tabId)) return;
+
+  // Same document, different anchor: the questions have not changed.
+  if (changeInfo.url && job && pageKey(job.url) === pageKey(changeInfo.url)) return;
+
+  // A bare 'loading' tick while we are working on this tab is the page still
+  // settling, not the user navigating away.
+  if (!changeInfo.url && running.has(tabId)) return;
+
   running.get(tabId)?.abort();
   running.delete(tabId);
   await clearJob(tabId);

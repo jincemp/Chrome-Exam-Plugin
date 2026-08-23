@@ -86,11 +86,23 @@ function renderAnswers(job) {
   show('answers');
 }
 
+/** Origins the last error asked us to request, kept for the grant button. */
+let pendingOrigins = [];
+
 function renderError(job) {
   $('error-message').textContent = job.error?.message || 'Something went wrong.';
   const hint = $('error-hint');
   hint.textContent = job.error?.hint || '';
   hint.hidden = !job.error?.hint;
+
+  pendingOrigins = job.error?.kind === 'frames' ? (job.error.origins || []) : [];
+  const grant = $('grant');
+  grant.hidden = pendingOrigins.length === 0;
+  if (pendingOrigins.length) {
+    const hosts = pendingOrigins.map((o) => new URL(o).host).join(', ');
+    grant.textContent = `Allow ${hosts}`;
+  }
+
   show('error');
 }
 
@@ -159,6 +171,19 @@ $('open-options').addEventListener('click', () => chrome.runtime.openOptionsPage
 $('error-options').addEventListener('click', () => chrome.runtime.openOptionsPage());
 $('get-answers').addEventListener('click', () => start(false));
 $('retry').addEventListener('click', () => start(true));
+
+// Chrome only shows a permission prompt during a user gesture, so this has to
+// happen on the click itself - not in the service worker.
+$('grant').addEventListener('click', async () => {
+  const origins = pendingOrigins.map((o) => `${o}/*`);
+  let granted = false;
+  try {
+    granted = await chrome.permissions.request({ origins });
+  } catch { /* treated as a refusal */ }
+  if (granted) return start(true);
+  $('error-hint').textContent = 'Without that permission the embedded questions stay unreadable.';
+  $('error-hint').hidden = false;
+});
 $('rerun').addEventListener('click', () => start(true));
 $('cancel').addEventListener('click', async () => {
   await send({ type: 'cancel', tabId: tab.id });
