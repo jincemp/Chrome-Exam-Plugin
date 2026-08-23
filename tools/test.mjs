@@ -192,10 +192,23 @@ test('extract: script and style content never appears', () => {
   assert.doesNotMatch(r.text, /color:red/);
 });
 
-test('extract: table cells are separated', () => {
-  const r = extract('<main><table><tr><td>1.</td><td>What is 2+2?</td></tr></table></main>');
-  assert.match(r.text, /\|/);
-  assert.match(r.text, /What is 2\+2\?/);
+test('extract: a table row stays on one line with its cells separated', () => {
+  const r = extract('<main><table><tr><td>1.</td><td>What is 2+2?</td></tr><tr><td>2.</td><td>And 3+3?</td></tr></table></main>');
+  const lines = r.text.split('\n').map((l) => l.trim()).filter(Boolean);
+  assert.ok(lines.some((l) => /1\..*\|.*What is 2\+2\?/.test(l)), lines.join(' // '));
+  assert.ok(lines.some((l) => /2\..*\|.*And 3\+3\?/.test(l)), lines.join(' // '));
+});
+
+test('extract: a page of question blocks is not reduced to the first one', () => {
+  const page = `<div id="page"><div class="header">Site</div>
+    <div class="question"><p>1. ${'Long question text about grounding electrodes. '.repeat(8)}</p></div>
+    <div class="question"><p>2. ${'Long question text about bonding jumpers. '.repeat(8)}</p></div>
+    <div class="question"><p>3. ${'Long question text about raceway fill. '.repeat(8)}</p></div>
+  </div>`;
+  const r = extract(page);
+  assert.match(r.text, /1\. Long question text about grounding/);
+  assert.match(r.text, /2\. Long question text about bonding/);
+  assert.match(r.text, /3\. Long question text about raceway/);
 });
 
 test('extract: short selects contribute their options', () => {

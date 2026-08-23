@@ -80,7 +80,7 @@
 
   // `out` collects string fragments; '\n' entries are collapsed at the end.
   const walk = (node, out, opts, depth) => {
-    if (depth > 80 || out.length > 200000) return;
+    if (depth > 300 || out.length > 200000) return;
 
     if (node.nodeType === Node.TEXT_NODE) {
       const t = node.nodeValue;
@@ -96,9 +96,12 @@
     const cs = styleOf(el);
     if (!isVisible(el, cs)) return;
 
-    // <br> has no box of its own but always breaks.
-    const block = el.tagName === 'BR' || isBlock(el, cs);
+    // A cell separates with a pipe and lets its row supply the line break; <br>
+    // has no box of its own but always breaks.
+    const cell = el.tagName === 'TD' || el.tagName === 'TH';
+    const block = !cell && (el.tagName === 'BR' || isBlock(el, cs));
     if (block) out.push('\n');
+    if (cell) out.push(' | ');
 
     // Google Forms and friends build radios out of divs.
     if (el.getAttribute('aria-checked') === 'true') out.push('[selected] ');
@@ -134,12 +137,12 @@
           if (t) out.push(`${o.selected ? '[selected] ' : ''}${t}\n`);
         }
       } else {
-        const chosen = opts.find((o) => o.selected) || opts[Math.max(0, el.selectedIndex || 0)];
+        const chosen = opts.find((o) => o.selected)
+          || (el.selectedIndex >= 0 ? opts[el.selectedIndex] : null);
         if (chosen) out.push(`[selected] ${optionText(chosen)}`);
       }
       return;
     }
-    if (el.tagName === 'TD' || el.tagName === 'TH') out.push(' | ');
     if (el.tagName === 'IMG') {
       const alt = el.getAttribute('alt');
       if (alt && alt.trim()) out.push(`[image: ${alt.trim()}]`);
@@ -169,15 +172,34 @@
 
   /* ------------------------------------------------------- main content pick */
 
+  /** The smallest element containing every match, or null if there are none. */
+  const commonAncestor = (selector) => {
+    let common = null;
+    try {
+      for (const el of document.querySelectorAll(selector)) {
+        if (!common) { common = el; continue; }
+        while (common && !common.contains(el)) common = common.parentElement;
+        if (!common) return null;
+      }
+    } catch {
+      return null;
+    }
+    return common;
+  };
+
   const pickRoot = () => {
     const body = document.body;
     if (!body) return document.documentElement;
+
     const candidates = [
       document.querySelector('main'),
       document.querySelector('[role="main"]'),
-      document.querySelector('#main, #content, #main-content, .main-content, .quiz, .questions, [class*="quiz" i], [class*="question" i]'),
+      document.querySelector('#main, #content, #main-content, .main-content'),
+      // Not the first question - the region holding all of them.
+      commonAncestor('.quiz, .questions, [class*="quiz" i], [class*="question" i]'),
       document.querySelector('article'),
     ].filter(Boolean);
+
     const bodyLen = (body.textContent || '').length;
     for (const c of candidates) {
       const len = (c.textContent || '').length;
