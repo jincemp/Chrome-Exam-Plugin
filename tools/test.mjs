@@ -42,7 +42,7 @@ globalThis.chrome = {
 };
 
 const { chunkText } = await import('../src/background.js');
-const { parseQuestions, relaxCaps, parseResponsesPayload, parseChatPayload, TruncatedError } = await import('../src/openai.js');
+const { parseQuestions, relaxCaps, parseResponsesPayload, parseChatPayload, classifyError, TruncatedError } = await import('../src/openai.js');
 const { formatAnswer, formatAll, sortAnswers } = await import('../src/format.js');
 const { ANSWER_SCHEMA, buildPrompt } = await import('../src/prompt.js');
 
@@ -284,6 +284,57 @@ test('parse: unusable content throws', () => {
   assert.throws(() => parseQuestions('I could not find any questions.'));
 });
 
+/* ------------------------------------------------------------ error mapping */
+
+const err = (status, error, settings = { model: 'gpt-5.4-nano' }) => classifyError(status, error ? { error } : null, settings);
+
+test('errors: a context-length 400 becomes a truncation the caller can recover from', () => {
+  const e = err(400, { code: 'context_length_exceeded', message: "This model's maximum context length is 272000 tokens." });
+  assert.ok(e instanceof TruncatedError, 'must be recoverable by splitting, not a dead end');
+});
+
+test('errors: 401 names the key and points at settings', () => {
+  const e = err(401, { code: 'invalid_api_key', message: 'Incorrect API key provided: sk-xxx.' });
+  assert.equal(e.kind, 'auth');
+  assert.match(e.message, /rejected your API key/i);
+  assert.match(e.hint, /settings/i);
+  assert.equal(e.retryable, false);
+});
+
+test('errors: out of credit is never retried', () => {
+  const e = err(429, { code: 'insufficient_quota', message: 'You exceeded your current quota.' });
+  assert.equal(e.kind, 'quota');
+  assert.equal(e.retryable, false);
+  assert.match(e.hint, /billing/i);
+});
+
+test('errors: a genuine rate limit is retried', () => {
+  const e = err(429, { code: 'rate_limit_exceeded', message: 'Rate limit reached for gpt-5.4-nano.' });
+  assert.equal(e.kind, 'rate');
+  assert.equal(e.retryable, true);
+});
+
+test('errors: a retired model names the model and the remedy', () => {
+  const e = err(404, { code: 'model_not_found', message: 'The model `gpt-4o` does not exist.' }, { model: 'gpt-4o' });
+  assert.equal(e.kind, 'model');
+  assert.match(e.message, /gpt-4o/);
+  assert.match(e.hint, /different model/i);
+});
+
+test('errors: an unknown route is an endpoint problem, not a model problem', () => {
+  assert.equal(err(404, { message: 'Unknown request URL.' }).kind, 'endpoint');
+  assert.equal(err(405, null).kind, 'endpoint');
+});
+
+test('errors: a server error is retried', () => {
+  assert.equal(err(503, null).retryable, true);
+});
+
+test('errors: a gateway answering with HTML still produces a message', () => {
+  const e = err(502, null);
+  assert.ok(e.message.length > 0);
+});
+
 /* ---------------------------------------------------------- payload shapes */
 
 const outputText = (text, extra = {}) => ({ type: 'message', content: [{ type: 'output_text', text }], ...extra });
@@ -341,13 +392,13 @@ test('chat: content comes back verbatim', () => {
 
 /* -------------------------------------------------------------- capability */
 
-const caps = () => ({ schema: true, reasoning: true, verbosity: true, maxTokens: true, temperature: true, store: true });
+const caps = () => ({ format: 'json_schema', reasoning: true, verbosity: true, maxTokens: true, temperature: true, store: true });
 
 test('relax: a temperature complaint drops temperature first', () => {
   const c = caps();
   assert.equal(relaxCaps({ status: 400, message: "Unsupported value: 'temperature' does not support 0 with this model." }, c), true);
   assert.equal(c.temperature, false);
-  assert.equal(c.schema, true);
+  assert.equal(c.format, 'json_schema');
 });
 
 test('relax: a max_tokens complaint drops the token cap', () => {
@@ -356,10 +407,12 @@ test('relax: a max_tokens complaint drops the token cap', () => {
   assert.equal(c.maxTokens, false);
 });
 
-test('relax: a schema complaint falls back to plain JSON', () => {
+test('relax: a schema complaint falls back to plain JSON, then to none', () => {
   const c = caps();
   relaxCaps({ status: 400, message: "Invalid parameter: 'response_format' of type 'json_schema' is not supported." }, c);
-  assert.equal(c.schema, false);
+  assert.equal(c.format, 'json_object');
+  relaxCaps({ status: 400, message: "Invalid parameter: 'response_format' is not supported." }, c);
+  assert.equal(c.format, 'none', 'a gateway supporting neither must still be reachable');
 });
 
 test('relax: an unrelated 400 never turns request retention back on', () => {
@@ -380,7 +433,7 @@ test('relax: eventually gives up', () => {
   while (relaxCaps({ status: 400, message: 'something unfamiliar' }, c)) {
     assert.ok(guard++ < 20, 'relaxCaps must terminate');
   }
-  assert.equal(c.schema, false);
+  assert.equal(c.format, 'none');
 });
 
 /* ------------------------------------------------------------------ format */

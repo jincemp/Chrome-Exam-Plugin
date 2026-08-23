@@ -23,6 +23,13 @@ const REASONING_RE = /^(o\d|gpt-[5-9])/i;
 /** Remembers which endpoint a given base URL actually implements. */
 const endpointCache = new Map();
 
+/**
+ * Remembers which request parameters a given base URL and model tolerate, so a
+ * page split into several chunks pays for a rejected parameter once rather than
+ * once per chunk. Lives only as long as the service worker.
+ */
+const capsCache = new Map();
+
 export class OpenAIError extends Error {
   constructor(message, { status = 0, code = '', param = '', hint = '', retryable = false, kind = 'api', origins = [] } = {}) {
     super(message);
@@ -62,12 +69,15 @@ async function toError(response, settings) {
   try {
     payload = await response.json();
   } catch { /* some gateways answer with HTML */ }
+  return classifyError(response.status, payload, settings);
+}
 
+/** @param {number} status @param {object|null} payload @param {object} [settings] */
+export function classifyError(status, payload, settings) {
   const err = payload?.error || {};
   const code = err.code || err.type || '';
   const detail = err.message || '';
   const param = err.param || '';
-  const status = response.status;
 
   if (status === 401) {
     return new OpenAIError('OpenAI rejected your API key.', {
@@ -105,6 +115,11 @@ async function toError(response, settings) {
   }
   if (status >= 500) {
     return new OpenAIError('OpenAI had a server error.', { status, code, param, retryable: true, hint: 'Usually transient.' });
+  }
+  // Too much page text for this model. The caller can split and try again, so
+  // report it the same way as an answer that ran out of room.
+  if (status === 400 && (code === 'context_length_exceeded' || /context length|too many tokens|maximum context/i.test(detail))) {
+    return new TruncatedError('That part of the page was too long for this model.');
   }
   return new OpenAIError(detail || `OpenAI returned HTTP ${status}.`, { status, code, param });
 }
@@ -166,8 +181,9 @@ export async function listModels(settings) {
 function initialCaps(settings) {
   const reasoning = REASONING_RE.test(settings.model || '');
   return {
-    schema: true,
-    reasoning: reasoning && settings.effort !== 'default',
+    // 'json_schema' -> 'json_object' -> 'none'. Some gateways support neither.
+    format: 'json_schema',
+    reasoning,
     verbosity: true,
     maxTokens: true,
     temperature: !reasoning,
@@ -183,15 +199,15 @@ function buildResponsesBody(settings, prompt, caps) {
   };
 
   const text = {};
-  if (caps.schema) {
+  if (caps.format === 'json_schema') {
     text.format = { type: 'json_schema', name: SCHEMA_NAME, strict: true, schema: ANSWER_SCHEMA };
-  } else {
+  } else if (caps.format === 'json_object') {
     text.format = { type: 'json_object' };
   }
   if (caps.verbosity) text.verbosity = 'low';
-  body.text = text;
+  if (Object.keys(text).length) body.text = text;
 
-  if (caps.reasoning) body.reasoning = { effort: settings.effort || 'low' };
+  if (caps.reasoning) body.reasoning = { effort: effortOf(settings) };
   if (caps.temperature) body.temperature = 0;
   if (caps.maxTokens) body.max_output_tokens = maxTokensFor(settings);
   if (caps.store) body.store = false; // do not leave exam content on OpenAI's servers
@@ -207,20 +223,27 @@ function buildChatBody(settings, prompt, caps) {
     ],
   };
 
-  body.response_format = caps.schema
-    ? { type: 'json_schema', json_schema: { name: SCHEMA_NAME, strict: true, schema: ANSWER_SCHEMA } }
-    : { type: 'json_object' };
+  if (caps.format === 'json_schema') {
+    body.response_format = { type: 'json_schema', json_schema: { name: SCHEMA_NAME, strict: true, schema: ANSWER_SCHEMA } };
+  } else if (caps.format === 'json_object') {
+    body.response_format = { type: 'json_object' };
+  }
 
-  if (caps.reasoning) body.reasoning_effort = settings.effort || 'low';
+  if (caps.reasoning) body.reasoning_effort = effortOf(settings);
   if (caps.verbosity) body.verbosity = 'low';
   if (caps.temperature) body.temperature = 0;
   if (caps.maxTokens) body.max_completion_tokens = maxTokensFor(settings);
   return body;
 }
 
+const EFFORTS = new Set(['none', 'low', 'medium', 'high']);
+
+/** Guards against a stale or hand-edited value reaching the API. */
+const effortOf = (settings) => (EFFORTS.has(settings.effort) ? settings.effort : 'low');
+
 /** Reasoning tokens are billed against the same budget, so leave headroom. */
 function maxTokensFor(settings) {
-  const effort = settings.effort || 'low';
+  const effort = effortOf(settings);
   if (!REASONING_RE.test(settings.model || '')) return 8000;
   return effort === 'high' ? 32000 : effort === 'medium' ? 24000 : 16000;
 }
@@ -292,15 +315,16 @@ export function parseChatPayload(data) {
  * @returns {Promise<{questions: Array<object>, usage: object|null, model: string}>}
  */
 export async function answerQuestions(settings, promptInput, signal) {
-  const caps = initialCaps(settings);
   const base = baseOf(settings);
+  const capsKey = `${base}|${settings.model}`;
+  const caps = { ...initialCaps(settings), ...(capsCache.get(capsKey) || {}) };
   let endpoint = settings.endpoint && settings.endpoint !== 'auto'
     ? settings.endpoint
     : endpointCache.get(base) || 'responses';
 
   // Each pass either succeeds or removes one thing the model objected to.
-  for (let pass = 0; pass < 8; pass++) {
-    const prompt = buildPrompt({ ...promptInput, schemaEnforced: caps.schema });
+  for (let pass = 0; pass < 12; pass++) {
+    const prompt = buildPrompt({ ...promptInput, schemaEnforced: caps.format === 'json_schema' });
     const responses = endpoint === 'responses';
     const path = responses ? '/responses' : '/chat/completions';
     const body = responses ? buildResponsesBody(settings, prompt, caps) : buildChatBody(settings, prompt, caps);
@@ -326,6 +350,7 @@ export async function answerQuestions(settings, promptInput, signal) {
     }
 
     endpointCache.set(base, endpoint);
+    capsCache.set(capsKey, { ...caps });
     const content = responses ? parseResponsesPayload(data) : parseChatPayload(data);
     return { questions: parseQuestions(content), usage: data.usage || null, model: data.model || settings.model };
   }
@@ -339,12 +364,18 @@ export async function answerQuestions(settings, promptInput, signal) {
 export function relaxCaps(err, caps) {
   const text = `${err.param || ''} ${err.code || ''} ${err.message || ''}`.toLowerCase();
 
+  const weakenFormat = () => {
+    if (caps.format === 'json_schema') { caps.format = 'json_object'; return true; }
+    if (caps.format === 'json_object') { caps.format = 'none'; return true; }
+    return false;
+  };
+
   if (caps.temperature && /temperature|top_p/.test(text)) { caps.temperature = false; return true; }
   if (caps.reasoning && /reasoning/.test(text)) { caps.reasoning = false; return true; }
   if (caps.verbosity && /verbosity/.test(text)) { caps.verbosity = false; return true; }
   if (caps.store && /\bstore\b/.test(text)) { caps.store = false; return true; }
   if (caps.maxTokens && /max_(output|completion)_tokens|max_tokens/.test(text)) { caps.maxTokens = false; return true; }
-  if (caps.schema && /json_schema|response_format|\bschema\b|\bformat\b|structured/.test(text)) { caps.schema = false; return true; }
+  if (/json_schema|json_object|response_format|\bschema\b|\bformat\b|structured/.test(text) && weakenFormat()) return true;
 
   // Unknown 400: shed parameters in order of how little we need them. `store` is
   // deliberately absent - it only comes off when the server names it, because
@@ -352,8 +383,8 @@ export function relaxCaps(err, caps) {
   if (caps.verbosity) { caps.verbosity = false; return true; }
   if (caps.reasoning) { caps.reasoning = false; return true; }
   if (caps.temperature) { caps.temperature = false; return true; }
-  if (caps.schema) { caps.schema = false; return true; }
-  return false;
+  if (caps.maxTokens) { caps.maxTokens = false; return true; }
+  return weakenFormat();
 }
 
 /** Accepts the strict schema shape and the looser shapes json_object mode produces. */
