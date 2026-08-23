@@ -140,22 +140,34 @@ async function readPage(tabId) {
     void err;
   }
 
-  const frames = results
-    .map((r) => r?.result)
-    .filter((r) => r && r.ok && (r.text || r.selection));
+  // The top frame may have no text of its own (a shell around an iframe), in
+  // which case it is not among the readable frames - but it is still the frame
+  // whose sub-frame list and title we want.
+  const allResults = results.map((r) => r?.result).filter(Boolean);
+  const topFrame = allResults.find((r) => r.isTop);
+  const frames = allResults.filter((r) => r.ok && (r.text || r.selection));
+
+  // Frames from another origin are silently skipped by allFrames injection,
+  // because activeTab covers only the page the user is actually on.
+  const blocked = (topFrame?.frameOrigins || []).filter(
+    (origin) => !frames.some((f) => f.url?.startsWith(origin)),
+  );
+
+  const embeddedQuiz = () => new OpenAIError('The questions are inside an embedded frame.', {
+    kind: 'frames',
+    hint: 'Chrome needs your permission to read it.',
+    origins: blocked,
+  });
 
   if (!frames.length) {
+    // A page that is nothing but a wrapper around someone else's quiz.
+    if (blocked.length) throw embeddedQuiz();
     throw new OpenAIError('No readable text on this page.', {
       kind: 'page',
       hint: 'The questions may be inside an image, a PDF viewer, or a canvas.',
     });
   }
 
-  // The top frame may have no text of its own (a shell around an iframe), in
-  // which case it is not in `frames` at all - but it is still the frame whose
-  // sub-frame list and title we want.
-  const allResults = results.map((r) => r?.result).filter(Boolean);
-  const topFrame = allResults.find((r) => r.isTop);
   const top = frames.find((f) => f.isTop) || frames[0];
 
   // A deliberate selection beats everything else on the page.
@@ -181,16 +193,9 @@ async function readPage(tabId) {
 
   // Reached nothing and there is an embedded frame from another origin? That is
   // where the quiz lives, and activeTab does not cover it.
-  const blocked = ((topFrame || top).frameOrigins || []).filter((origin) => !frames.some((f) => f.url?.startsWith(origin)));
   // A page with real content and a stray ad frame is not this case; a page that
   // is little more than a wrapper around someone else's quiz is.
-  if (questionCount === 0 && text.length < 1500 && blocked.length) {
-    throw new OpenAIError('The questions are inside an embedded frame.', {
-      kind: 'frames',
-      hint: 'Chrome needs your permission to read it.',
-      origins: blocked,
-    });
-  }
+  if (questionCount === 0 && text.length < 1500 && blocked.length) throw embeddedQuiz();
 
   return {
     url: (topFrame || top).url,

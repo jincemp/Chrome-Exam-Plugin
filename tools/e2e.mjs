@@ -83,6 +83,8 @@ const seen = { bodies: [], paths: [] };
 /** Flipped between scenarios to exercise the client's fallback paths. */
 let mode = 'responses';
 
+let port = 0;
+
 const server = http.createServer((req, res) => {
   const url = new URL(req.url, 'http://127.0.0.1');
   seen.paths.push(`${req.method} ${url.pathname}`);
@@ -94,6 +96,18 @@ const server = http.createServer((req, res) => {
 
   if (url.pathname === '/long.html') {
     res.writeHead(200, { 'content-type': 'text/html' }).end(LONG_PAGE);
+    return;
+  }
+
+  // Served on 127.0.0.1 but framing localhost - a different origin, and one the
+  // extension has no permission for, exactly like a real embedded quiz.
+  if (url.pathname === '/wrapper.html') {
+    res.writeHead(200, { 'content-type': 'text/html' }).end(
+      `<!doctype html><html><head><title>Course</title></head><body><main>
+        <h1>Module 4</h1>
+        <iframe src="http://localhost:${port}/quiz.html" width="800" height="600"></iframe>
+      </main></body></html>`,
+    );
     return;
   }
 
@@ -163,7 +177,7 @@ const server = http.createServer((req, res) => {
 });
 
 await new Promise((resolve) => server.listen(0, '127.0.0.1', resolve));
-const port = server.address().port;
+port = server.address().port;
 const origin = `http://127.0.0.1:${port}`;
 
 /* ------------------------------------------- extension copy with test access */
@@ -491,6 +505,24 @@ try {
   });
 
   await long.close();
+
+  /* ------------------------------------ a quiz embedded from another origin */
+
+  mode = 'responses';
+  seen.bodies.length = 0;
+  const wrapper = await context.newPage();
+  await wrapper.goto(`${origin}/wrapper.html`);
+  await wrapper.waitForLoadState('domcontentloaded');
+  const embedded = await runJob(`${origin}/wrapper.html`);
+
+  check('a page wrapping a cross-origin quiz asks for that site, not "no text"', () => {
+    assert.equal(embedded.record?.status, 'error');
+    assert.equal(embedded.record.error.kind, 'frames', JSON.stringify(embedded.record.error));
+    assert.deepEqual(embedded.record.error.origins, [`http://localhost:${port}`]);
+    assert.equal(seen.bodies.length, 0, 'nothing should have been sent to OpenAI');
+  });
+
+  await wrapper.close();
 
   /* ----------------------------------------- a proxy without /v1/responses */
 
