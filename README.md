@@ -21,13 +21,11 @@ this does. It takes about two minutes.
 
 ### 1. Download the files
 
-Open the project page in Chrome, click the green **Code** button, and choose
-**Download ZIP**. Make sure you are on the
-`claude/chrome-quiz-answers-extension-jsoln3` branch first — there is a branch
-picker just above the file list, on the left.
+Open [the project page](https://github.com/jincemp/Chrome-Exam-Plugin) in
+Chrome, click the green **Code** button, and choose **Download ZIP**.
 
 Your Mac saves a `.zip` to **Downloads**. Double-click it to unzip. You now have
-a folder whose name starts with `Chrome-Exam-Plugin`.
+a folder called `Chrome-Exam-Plugin-main`.
 
 ### 2. Move the folder somewhere permanent
 
