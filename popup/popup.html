@@ -1,0 +1,52 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>Quiz Answers</title>
+    <link rel="stylesheet" href="popup.css" />
+  </head>
+  <body>
+    <main id="app" class="app">
+      <!-- Every panel lives in the markup; exactly one is unhidden at a time. -->
+
+      <section id="panel-setup" class="panel" hidden>
+        <p class="lead">Add your OpenAI API key to get started.</p>
+        <button id="open-options" class="cta">Open settings</button>
+      </section>
+
+      <section id="panel-idle" class="panel" hidden>
+        <button id="get-answers" class="cta">Get answers</button>
+        <p id="idle-note" class="note"></p>
+      </section>
+
+      <section id="panel-busy" class="panel" hidden>
+        <div class="busy">
+          <span class="spinner" aria-hidden="true"></span>
+          <span id="busy-label">Reading page…</span>
+        </div>
+        <button id="cancel" class="link-btn">Cancel</button>
+      </section>
+
+      <section id="panel-answers" class="panel" hidden>
+        <ol id="answers" class="answers"></ol>
+        <footer class="foot">
+          <span id="answers-meta" class="meta"></span>
+          <span class="foot-actions">
+            <button id="copy" class="link-btn">Copy</button>
+            <button id="rerun" class="link-btn">Re-run</button>
+          </span>
+        </footer>
+      </section>
+
+      <section id="panel-error" class="panel" hidden>
+        <p id="error-message" class="error"></p>
+        <p id="error-hint" class="note" hidden></p>
+        <span class="foot-actions">
+          <button id="retry" class="link-btn">Try again</button>
+          <button id="error-options" class="link-btn">Settings</button>
+        </span>
+      </section>
+    </main>
+    <script type="module" src="popup.js"></script>
+  </body>
+</html>

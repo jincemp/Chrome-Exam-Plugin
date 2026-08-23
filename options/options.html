@@ -1,0 +1,85 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>Quiz Answers — Settings</title>
+    <link rel="stylesheet" href="options.css" />
+  </head>
+  <body>
+    <main class="wrap">
+      <h1>Quiz Answers</h1>
+      <p class="sub">Answers are generated with your own OpenAI account.</p>
+
+      <form id="form">
+        <label class="field">
+          <span class="label">OpenAI API key</span>
+          <span class="key-row">
+            <input id="apiKey" type="password" autocomplete="off" spellcheck="false"
+                   placeholder="sk-…" />
+            <button id="reveal" type="button" class="ghost">Show</button>
+          </span>
+          <span class="hint">
+            Create one at
+            <a href="https://platform.openai.com/api-keys" target="_blank" rel="noreferrer noopener">platform.openai.com/api-keys</a>.
+            It is stored in this browser only and sent to OpenAI, nowhere else.
+          </span>
+        </label>
+
+        <label class="field">
+          <span class="label">Model</span>
+          <input id="model" list="models" spellcheck="false" placeholder="gpt-4.1-mini" />
+          <datalist id="models"></datalist>
+          <span class="hint" id="model-hint">Cheaper models are fine for straightforward recall questions.</span>
+        </label>
+
+        <label class="field">
+          <span class="label">Thinking</span>
+          <select id="effort">
+            <option value="none">None — fastest, cheapest</option>
+            <option value="low">Low — good default</option>
+            <option value="medium">Medium — for calculations</option>
+            <option value="high">High — slowest, most careful</option>
+          </select>
+          <span class="hint">Raise this for maths-heavy exams where the options are close together.</span>
+        </label>
+
+        <label class="field">
+          <span class="label">Extra instructions <span class="opt">optional</span></span>
+          <textarea id="extraInstructions" rows="3"
+                    placeholder="e.g. This is for the 2023 NEC. Prefer answers based on that code cycle."></textarea>
+          <span class="hint">Added to every request. Useful for naming the syllabus, code edition, or exam board.</span>
+        </label>
+
+        <label class="check">
+          <input id="showWhy" type="checkbox" />
+          <span>Show a one-line reason when I click an answer</span>
+        </label>
+
+        <details class="advanced">
+          <summary>Advanced</summary>
+          <label class="field">
+            <span class="label">API base URL</span>
+            <input id="baseUrl" spellcheck="false" placeholder="https://api.openai.com/v1" />
+            <span class="hint">Change only for an OpenAI-compatible proxy. You will be asked to grant access to the new host.</span>
+          </label>
+
+          <label class="field">
+            <span class="label">Endpoint</span>
+            <select id="endpoint">
+              <option value="auto">Auto — try /responses, fall back to /chat/completions</option>
+              <option value="responses">/responses</option>
+              <option value="chat">/chat/completions</option>
+            </select>
+          </label>
+        </details>
+
+        <div class="actions">
+          <button id="save" type="submit" class="primary">Save</button>
+          <button id="test" type="button" class="ghost">Test key</button>
+          <span id="status" class="status" role="status"></span>
+        </div>
+      </form>
+    </main>
+    <script type="module" src="options.js"></script>
+  </body>
+</html>

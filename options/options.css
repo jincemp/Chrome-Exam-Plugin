@@ -1,0 +1,87 @@
+:root {
+  --bg: #ffffff;
+  --fg: #14161a;
+  --muted: #6b7280;
+  --line: #e0e3e8;
+  --field: #ffffff;
+  --accent: #4f46e5;
+  --ok: #15803d;
+  --danger: #b42318;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #17191d;
+    --fg: #f2f3f5;
+    --muted: #9aa1ab;
+    --line: #31353c;
+    --field: #1f2227;
+    --accent: #6366f1;
+    --ok: #4ade80;
+    --danger: #f97066;
+  }
+}
+
+* { box-sizing: border-box; }
+
+body {
+  margin: 0;
+  padding: 40px 20px;
+  background: var(--bg);
+  color: var(--fg);
+  font: 14px/1.5 -apple-system, BlinkMacSystemFont, "SF Pro Text", "Segoe UI", system-ui, sans-serif;
+  -webkit-font-smoothing: antialiased;
+}
+
+.wrap { max-width: 520px; margin: 0 auto; }
+
+h1 { margin: 0 0 4px; font-size: 20px; }
+.sub { margin: 0 0 24px; color: var(--muted); }
+
+.field { display: block; margin-bottom: 20px; }
+.label { display: block; margin-bottom: 6px; font-weight: 600; font-size: 13px; }
+.opt { color: var(--muted); font-weight: 400; }
+
+input, textarea, select {
+  width: 100%;
+  padding: 8px 10px;
+  border: 1px solid var(--line);
+  border-radius: 7px;
+  background: var(--field);
+  color: var(--fg);
+  font: inherit;
+}
+input:focus, textarea:focus, select:focus { outline: 2px solid var(--accent); outline-offset: -1px; border-color: transparent; }
+textarea { resize: vertical; }
+
+.key-row { display: flex; gap: 8px; }
+.key-row input { flex: 1; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
+
+.hint { display: block; margin-top: 6px; color: var(--muted); font-size: 12px; }
+.hint a { color: var(--accent); }
+
+.check { display: flex; align-items: center; gap: 8px; margin-bottom: 20px; }
+.check input { width: auto; }
+
+.advanced { margin-bottom: 22px; }
+.advanced summary { cursor: pointer; color: var(--muted); font-size: 13px; }
+.advanced .field { margin: 14px 0 0; }
+
+.actions { display: flex; align-items: center; gap: 10px; }
+
+button {
+  padding: 8px 14px;
+  border-radius: 7px;
+  font: inherit;
+  font-weight: 600;
+  cursor: pointer;
+}
+.primary { border: 0; background: var(--accent); color: #fff; }
+.primary:hover { filter: brightness(1.07); }
+.ghost { border: 1px solid var(--line); background: transparent; color: var(--fg); }
+.ghost:hover { border-color: var(--muted); }
+button:disabled { opacity: 0.6; cursor: default; }
+
+.status { font-size: 13px; color: var(--muted); }
+.status.ok { color: var(--ok); }
+.status.bad { color: var(--danger); }

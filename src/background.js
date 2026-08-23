@@ -1,0 +1,396 @@
+/*
+ * Service worker: owns the work, so a job survives the popup closing.
+ *
+ * The popup only ever sends a command and then watches chrome.storage.session
+ * for the job record to change.
+ */
+
+import { answerQuestions, OpenAIError, TruncatedError } from './openai.js';
+import { clearJob, getJob, getSettings, pageKey, setJob } from './storage.js';
+
+const CHUNK_CHARS = 14000;   // roughly 3.5k tokens of page text per request
+const MIN_CHUNK_CHARS = 900; // below this, splitting further cannot help
+const MAX_PARALLEL = 3;
+
+const IDLE_ICON = { 16: 'icons/icon16.png', 32: 'icons/icon32.png', 48: 'icons/icon48.png', 128: 'icons/icon128.png' };
+const DONE_ICON = { 16: 'icons/icon-done16.png', 32: 'icons/icon-done32.png', 48: 'icons/icon-done48.png', 128: 'icons/icon-done128.png' };
+
+/** tabId -> AbortController for the run in flight. */
+const running = new Map();
+
+/* ------------------------------------------------------------ tab chrome */
+
+async function setBadge(tabId, { text = '', color = '#16a34a' } = {}) {
+  try {
+    await chrome.action.setBadgeText({ tabId, text });
+    if (text) {
+      await chrome.action.setBadgeBackgroundColor({ tabId, color });
+      if (chrome.action.setBadgeTextColor) await chrome.action.setBadgeTextColor({ tabId, color: '#ffffff' });
+    }
+  } catch { /* the tab went away */ }
+}
+
+async function setIcon(tabId, done) {
+  try {
+    await chrome.action.setIcon({ tabId, path: done ? DONE_ICON : IDLE_ICON });
+  } catch { /* the tab went away */ }
+}
+
+async function markReady(tabId, count) {
+  await setIcon(tabId, true);
+  await setBadge(tabId, { text: count ? String(count) : '✓' });
+}
+
+async function markIdle(tabId) {
+  await setIcon(tabId, false);
+  await setBadge(tabId, { text: '' });
+}
+
+async function markFailed(tabId) {
+  await setIcon(tabId, false);
+  await setBadge(tabId, { text: '!', color: '#b42318' });
+}
+
+/* -------------------------------------------------------------- page read */
+
+const UNSUPPORTED_HINT =
+  'Chrome blocks extensions on this page. Try it on a normal http(s) page.';
+
+/** Runs extract.js in every frame and stitches the frames together. */
+async function readPage(tabId) {
+  let results;
+  try {
+    results = await chrome.scripting.executeScript({
+      target: { tabId, allFrames: true },
+      files: ['src/extract.js'],
+    });
+  } catch (err) {
+    // allFrames fails outright on some pages; the top frame alone may still work.
+    try {
+      results = await chrome.scripting.executeScript({ target: { tabId }, files: ['src/extract.js'] });
+    } catch {
+      throw new OpenAIError('Cannot read this page.', { kind: 'page', hint: UNSUPPORTED_HINT });
+    }
+    void err;
+  }
+
+  const frames = results
+    .map((r) => r?.result)
+    .filter((r) => r && r.ok && (r.text || r.selection));
+
+  if (!frames.length) {
+    throw new OpenAIError('No readable text on this page.', {
+      kind: 'page',
+      hint: 'The questions may be inside an image, a PDF viewer, or a canvas.',
+    });
+  }
+
+  const top = frames.find((f) => f.isTop) || frames[0];
+
+  // A deliberate selection beats everything else on the page.
+  if (top.selection) {
+    return {
+      url: top.url,
+      title: top.title,
+      text: top.selection,
+      hints: top.hints || '',
+      questionCount: top.questionCount,
+      truncated: false,
+      fromSelection: true,
+    };
+  }
+
+  const others = frames
+    .filter((f) => f !== top && f.text && f.text.length > 200)
+    .sort((a, b) => b.text.length - a.text.length)
+    .slice(0, 4);
+
+  const text = [top.text, ...others.map((f) => f.text)].filter(Boolean).join('\n\n');
+
+  return {
+    url: top.url,
+    title: top.title,
+    text,
+    hints: top.hints || '',
+    questionCount: Math.max(top.questionCount, ...others.map((f) => f.questionCount), 0),
+    truncated: frames.some((f) => f.truncated),
+    fromSelection: false,
+  };
+}
+
+/* --------------------------------------------------------------- chunking */
+
+const QUESTION_START_RE = /^\s*(?:q(?:uestion)?\s*[.:#-]?\s*)?\d{1,3}\s*[.):\]]\s+\S/i;
+
+/** Split long pages on question boundaries so no question loses its options. */
+export function chunkText(text, maxChars = CHUNK_CHARS) {
+  if (text.length <= maxChars) return [text];
+
+  const lines = text.split('\n');
+  const breakpoints = [];
+  for (let i = 0; i < lines.length; i++) {
+    if (QUESTION_START_RE.test(lines[i])) breakpoints.push(i);
+  }
+  // No numbering to key off - fall back to blank lines, then to raw slicing.
+  const boundaries = breakpoints.length > 1
+    ? new Set(breakpoints)
+    : new Set(lines.map((l, i) => (l.trim() === '' ? i + 1 : -1)).filter((i) => i > 0));
+
+  const chunks = [];
+  let current = [];
+  let size = 0;
+
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i];
+    if (size + line.length > maxChars && current.length && boundaries.has(i)) {
+      chunks.push(current.join('\n'));
+      current = [];
+      size = 0;
+    } else if (size + line.length > maxChars * 1.6 && current.length) {
+      chunks.push(current.join('\n')); // hard stop: no boundary showed up in time
+      current = [];
+      size = 0;
+    }
+    current.push(line);
+    size += line.length + 1;
+  }
+  if (current.length) chunks.push(current.join('\n'));
+
+  return chunks.filter((c) => c.trim());
+}
+
+/* ------------------------------------------------------------------- merge */
+
+const CONFIDENCE_RANK = { high: 3, medium: 2, low: 1 };
+
+function mergeAnswers(groups) {
+  const byNumber = new Map();
+  for (const answer of groups.flat()) {
+    const key = answer.number || `#${byNumber.size + 1}`;
+    const existing = byNumber.get(key);
+    if (!existing || CONFIDENCE_RANK[answer.confidence] > CONFIDENCE_RANK[existing.confidence]) {
+      byNumber.set(key, answer);
+    }
+  }
+  return [...byNumber.values()];
+}
+
+/* --------------------------------------------------------------- the work */
+
+/** Runs one chunk, halving it if the model runs out of room mid-answer. */
+async function runChunk(settings, page, chunk, part, parts, signal, depth = 0) {
+  const promptInput = {
+    title: page.title,
+    url: page.url,
+    text: chunk,
+    hints: part === 1 ? page.hints : '',
+    questionCount: page.questionCount,
+    part,
+    parts,
+    extraInstructions: settings.extraInstructions,
+  };
+
+  try {
+    const { questions } = await answerQuestions(settings, promptInput, signal);
+    return questions;
+  } catch (err) {
+    if (!(err instanceof TruncatedError) || depth >= 2 || chunk.length < MIN_CHUNK_CHARS) throw err;
+    const halves = chunkText(chunk, Math.floor(chunk.length / 2));
+    if (halves.length < 2) throw err;
+    const results = [];
+    for (const half of halves) {
+      results.push(await runChunk(settings, page, half, part, parts, signal, depth + 1));
+    }
+    return results.flat();
+  }
+}
+
+async function runJob(tabId) {
+  const settings = await getSettings();
+  const controller = new AbortController();
+  running.get(tabId)?.abort();
+  running.set(tabId, controller);
+  const keepAlive = startKeepAlive();
+
+  const update = (patch) => setJob(tabId, { tabId, ...patch });
+
+  try {
+    await markIdle(tabId);
+
+    // Record the URL up front: the popup matches a job to the tab it is looking
+    // at, and would treat a job with no URL as stale.
+    let tabUrl = '';
+    try {
+      tabUrl = (await chrome.tabs.get(tabId))?.url || '';
+    } catch { /* tab closed mid-click */ }
+    await update({ status: 'reading', url: tabUrl, startedAt: Date.now() });
+
+    const page = await readPage(tabId);
+    if (controller.signal.aborted) return;
+
+    const chunks = chunkText(page.text);
+    await update({
+      status: 'thinking',
+      url: page.url,
+      startedAt: Date.now(),
+      progress: { done: 0, total: chunks.length },
+    });
+
+    const groups = new Array(chunks.length);
+    let done = 0;
+    let cursor = 0;
+
+    const worker = async () => {
+      while (cursor < chunks.length) {
+        const index = cursor++;
+        groups[index] = await runChunk(settings, page, chunks[index], index + 1, chunks.length, controller.signal);
+        done++;
+        if (!controller.signal.aborted) {
+          await update({
+            status: 'thinking',
+            url: page.url,
+            progress: { done, total: chunks.length },
+          });
+        }
+      }
+    };
+
+    await Promise.all(Array.from({ length: Math.min(MAX_PARALLEL, chunks.length) }, worker));
+    if (controller.signal.aborted) return;
+
+    const answers = mergeAnswers(groups.filter(Boolean));
+    await update({
+      status: 'done',
+      url: page.url,
+      answers,
+      meta: {
+        model: settings.model,
+        chunks: chunks.length,
+        truncated: page.truncated,
+        fromSelection: page.fromSelection,
+      },
+    });
+    await markReady(tabId, answers.length);
+  } catch (err) {
+    if (err?.name === 'AbortError' || controller.signal.aborted) {
+      await clearJob(tabId);
+      await markIdle(tabId);
+      return;
+    }
+    const error = err instanceof OpenAIError
+      ? { message: err.message, hint: err.hint, kind: err.kind }
+      : { message: err?.message || 'Something went wrong.', hint: '' };
+    let url = '';
+    try {
+      url = (await chrome.tabs.get(tabId))?.url || '';
+    } catch { /* tab closed */ }
+    await update({ status: 'error', url, error });
+    await markFailed(tabId);
+  } finally {
+    stopKeepAlive(keepAlive);
+    if (running.get(tabId) === controller) running.delete(tabId);
+  }
+}
+
+/* ---------------------------------------------------------------- keepalive */
+
+// Cheap insurance: extension API traffic resets the worker's idle timer, so a
+// slow model cannot strand a job half-finished.
+let keepAliveTimer = null;
+let keepAliveCount = 0;
+
+function startKeepAlive() {
+  keepAliveCount++;
+  if (!keepAliveTimer) {
+    keepAliveTimer = setInterval(() => { chrome.runtime.getPlatformInfo().catch(() => {}); }, 20000);
+  }
+  return true;
+}
+
+function stopKeepAlive() {
+  keepAliveCount = Math.max(0, keepAliveCount - 1);
+  if (keepAliveCount === 0 && keepAliveTimer) {
+    clearInterval(keepAliveTimer);
+    keepAliveTimer = null;
+  }
+}
+
+/* ---------------------------------------------------------------- messages */
+
+chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
+  (async () => {
+    try {
+      if (message?.type === 'scan') {
+        const page = await readPage(message.tabId);
+        sendResponse({ ok: true, questionCount: page.questionCount, fromSelection: page.fromSelection });
+        return;
+      }
+
+      if (message?.type === 'start') {
+        const settings = await getSettings();
+        if (!settings.apiKey) {
+          sendResponse({ ok: false, error: { message: 'No API key yet.', hint: 'Add one in settings.' } });
+          return;
+        }
+        if (running.has(message.tabId) && !message.force) {
+          sendResponse({ ok: true, alreadyRunning: true });
+          return;
+        }
+        runJob(message.tabId);
+        sendResponse({ ok: true });
+        return;
+      }
+
+      if (message?.type === 'cancel') {
+        running.get(message.tabId)?.abort();
+        running.delete(message.tabId);
+        await clearJob(message.tabId);
+        await markIdle(message.tabId);
+        sendResponse({ ok: true });
+        return;
+      }
+
+      sendResponse({ ok: false, error: { message: `Unknown command: ${message?.type}` } });
+    } catch (err) {
+      sendResponse({
+        ok: false,
+        error: { message: err?.message || 'Unexpected error.', hint: err?.hint || '' },
+      });
+    }
+  })();
+  return true; // keeps the response channel open for the async work above
+});
+
+/* ------------------------------------------------------------ tab lifecycle */
+
+chrome.tabs.onUpdated.addListener(async (tabId, changeInfo) => {
+  if (!changeInfo.url) return; // ignore title/favicon churn
+  const job = await getJob(tabId);
+  if (job && pageKey(job.url) === pageKey(changeInfo.url)) return; // same page, new hash
+  running.get(tabId)?.abort();
+  running.delete(tabId);
+  await clearJob(tabId);
+  await markIdle(tabId);
+});
+
+chrome.tabs.onRemoved.addListener((tabId) => {
+  running.get(tabId)?.abort();
+  running.delete(tabId);
+  clearJob(tabId);
+});
+
+// A fresh worker has no per-tab icon state, and session storage may still hold
+// finished jobs from before it was torn down. Put the badges back.
+chrome.runtime.onStartup.addListener(() => restoreBadges());
+chrome.runtime.onInstalled.addListener(() => restoreBadges());
+
+async function restoreBadges() {
+  try {
+    const all = await chrome.storage.session.get(null);
+    for (const [key, job] of Object.entries(all)) {
+      if (!key.startsWith('job:')) continue;
+      const tabId = Number(key.slice(4));
+      if (job?.status === 'done') await markReady(tabId, job.answers?.length || 0);
+    }
+  } catch { /* nothing to restore */ }
+}
