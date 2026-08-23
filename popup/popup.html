@@ -20,7 +20,7 @@
       </section>
 
       <section id="panel-busy" class="panel" hidden>
-        <div class="busy">
+        <div class="busy" role="status" aria-live="polite">
           <span class="spinner" aria-hidden="true"></span>
           <span id="busy-label">Reading page…</span>
         </div>
@@ -28,7 +28,7 @@
       </section>
 
       <section id="panel-answers" class="panel" hidden>
-        <ol id="answers" class="answers"></ol>
+        <ol id="answers" class="answers" aria-label="Answers"></ol>
         <footer class="foot">
           <span id="answers-meta" class="meta"></span>
           <span class="foot-actions">

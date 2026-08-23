@@ -122,8 +122,10 @@ function renderBusy(job) {
 
 function renderIdle(note) {
   $('idle-note').textContent = note || '';
-  $('get-answers').disabled = false;
+  const cta = $('get-answers');
+  cta.disabled = false;
   show('idle');
+  cta.focus();
 }
 
 function render(job) {
@@ -162,14 +164,20 @@ async function start(force) {
 /** Free question count so the CTA can say what it is about to work on. */
 async function previewCount() {
   const res = await send({ type: 'scan', tabId: tab.id });
+
+  // The user may have pressed Get answers while this was in flight; whatever it
+  // has to say is now stale.
+  if (panels.idle.hidden) return;
+
   if (!res?.ok) {
     if (res?.error?.message) renderError({ error: res.error });
     return;
   }
-  if (!panels.idle.hidden) {
-    const n = res.questionCount;
-    renderIdle(n > 0 ? `${n} question${n === 1 ? '' : 's'} detected` : 'No numbered questions detected — will try anyway.');
-  }
+
+  const n = res.questionCount;
+  renderIdle(n > 0
+    ? `${n} question${n === 1 ? '' : 's'} detected`
+    : 'No numbered questions detected — will try anyway.');
 }
 
 /* -------------------------------------------------------------------- wire */
