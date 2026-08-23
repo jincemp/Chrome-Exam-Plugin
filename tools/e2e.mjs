@@ -192,9 +192,11 @@ const context = await chromium.launchPersistentContext(userDataDir, {
 });
 
 let failures = 0;
+/** Synchronous on purpose: an async body would outlive the page it asserts on. */
 const check = (name, fn) => {
   try {
-    fn();
+    const result = fn();
+    if (result instanceof Promise) throw new Error('check() bodies must be synchronous');
     console.log(`ok   ${name}`);
   } catch (err) {
     failures++;
@@ -307,7 +309,7 @@ try {
     assert.match(sent, /unverified/i);
   });
 
-  check('the badge and icon report readiness', async () => {
+  check('the run produced one answer per question', () => {
     assert.equal(job.record.answers.length, 3);
   });
 
@@ -380,6 +382,68 @@ try {
     );
     assert.equal(iconProbe.imageData, 'accepted', 'the ImageData fallback must work');
   });
+
+  /* ------------------------------------------------------- the popup itself */
+
+  const quizTabId = await driver.evaluate(async (quizUrl) => {
+    const [tab] = await chrome.tabs.query({ url: quizUrl });
+    await chrome.storage.session.remove(`job:${tab.id}`);
+    return tab.id;
+  }, `${origin}/quiz.html`);
+
+  const popup = await context.newPage();
+  // A popup normally opens over the active tab. Opened as a page it is its own
+  // tab, so point its "active tab" lookup at the quiz. Everything else - the
+  // messaging, the storage subscription, the rendering - is the real thing.
+  await popup.addInitScript((tabId) => {
+    const real = chrome.tabs.query.bind(chrome.tabs);
+    chrome.tabs.query = async (info) => (info.active ? [await chrome.tabs.get(tabId)] : real(info));
+  }, quizTabId);
+  await popup.goto(`chrome-extension://${extensionId}/popup/popup.html`);
+
+  await popup.waitForSelector('#panel-idle:not([hidden])', { timeout: 10000 });
+
+  const idleNote = await popup.textContent('#idle-note');
+  check('the call to action says how many questions it found', () => {
+    assert.match(idleNote || '', /3 questions detected/);
+  });
+
+  await popup.click('#get-answers');
+  await popup.waitForSelector('#panel-answers:not([hidden])', { timeout: 20000 });
+
+  const rows = await popup.$$eval('#answers .row', (els) => els.map(
+    (e) => [...e.children].map((c) => c.textContent.replace(/\s+/g, ' ').trim()).join(' '),
+  ));
+
+  check('the popup renders the answers in the asked-for shape', () => {
+    assert.equal(rows.length, 3);
+    assert.equal(rows[0], 'Q1: b) 230.34');
+    assert.equal(rows[1], 'Q2: c) The grounded conductor');
+    assert.equal(rows[2], 'Q3: 4.7 kΩ');
+  });
+
+  check('a question with no options shows no option letter', () => {
+    assert.doesNotMatch(rows[2], /\)/);
+  });
+
+  const reopened = await context.newPage();
+  await reopened.addInitScript((tabId) => {
+    const real = chrome.tabs.query.bind(chrome.tabs);
+    chrome.tabs.query = async (info) => (info.active ? [await chrome.tabs.get(tabId)] : real(info));
+  }, quizTabId);
+  await reopened.goto(`chrome-extension://${extensionId}/popup/popup.html`);
+  await reopened.waitForSelector('#panel-answers:not([hidden])', { timeout: 10000 });
+
+  const requestsBefore = seen.bodies.length;
+  const again = await reopened.$$eval('#answers .row', (els) => els.length);
+
+  check('reopening the popup shows the answers again without asking OpenAI', () => {
+    assert.equal(again, 3);
+    assert.equal(seen.bodies.length, requestsBefore, 'a cached answer sheet must not cost another request');
+  });
+
+  await popup.close();
+  await reopened.close();
 
   /* ------------------------------------------------ a page too long for one request */
 
