@@ -19,8 +19,8 @@ options show just the answer.
 1. Get the files onto your Mac:
 
    ```sh
-   git clone https://github.com/jincemp/chrome-exam-plugin.git
-   cd chrome-exam-plugin
+   git clone https://github.com/jincemp/Chrome-Exam-Plugin.git
+   cd Chrome-Exam-Plugin
    ```
 
 2. Open `chrome://extensions` in Chrome.
@@ -53,6 +53,10 @@ Two things worth knowing:
   selected when you click **Get answers**, only that selection is sent.
 - **Click an answer** to see a one-line reason for it. Turn this off in settings
   if you would rather keep the list bare.
+
+A `?` after an answer means the model was unsure. If the footer says *partly
+loaded*, the page only had some of its questions in the DOM when it was read —
+scroll to the bottom and press **Re-run**.
 
 Answers are kept until you reload the page, navigate that tab elsewhere, or
 quit Chrome. Nothing is written to disk except your settings.
@@ -97,6 +101,12 @@ pages until you tick *Allow access to file URLs* on the extension's card in
 
 **"No readable text on this page."** The questions are probably an image, a PDF,
 or drawn on a `<canvas>`. Nothing to extract.
+
+**"The questions are inside an embedded frame."** The quiz is served from
+another site inside an iframe, and `activeTab` only covers the page you are
+actually on. The popup offers an **Allow …** button that asks Chrome for access
+to that one site; after granting it, the answers come through. You can withdraw
+it later under *Site access* on the extension's card in `chrome://extensions`.
 
 **"Model … does not exist or your key has no access to it."** OpenAI retires
 models regularly. Open settings, press **Test key**, and pick one from the
