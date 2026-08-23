@@ -14,29 +14,81 @@ options show just the answer.
 
 ---
 
-## Install (macOS)
+## Install it on your Mac
 
-1. Get the files onto your Mac:
+You do not need any developer tools, and you do not need to know what any of
+this does. It takes about two minutes.
 
-   ```sh
-   git clone https://github.com/jincemp/Chrome-Exam-Plugin.git
-   cd Chrome-Exam-Plugin
-   ```
+### 1. Download the files
 
-2. Open `chrome://extensions` in Chrome.
-3. Turn on **Developer mode** (top-right toggle).
-4. Click **Load unpacked** and choose the folder you just cloned.
-5. Pin the extension: click the puzzle-piece icon in the toolbar, then the pin
-   next to **Quiz Answers**.
+Open the project page in Chrome, click the green **Code** button, and choose
+**Download ZIP**. Make sure you are on the
+`claude/chrome-quiz-answers-extension-jsoln3` branch first — there is a branch
+picker just above the file list, on the left.
 
-## Add your API key
+Your Mac saves a `.zip` to **Downloads**. Double-click it to unzip. You now have
+a folder whose name starts with `Chrome-Exam-Plugin`.
 
-1. Create a key at
-   [platform.openai.com/api-keys](https://platform.openai.com/api-keys).
-   The account needs a little credit on it — see [Cost](#cost).
-2. Click the extension icon → **Open settings**, paste the key, press **Save**.
-3. **Test key** confirms the key works and fills the model list with the models
-   your account can actually use.
+### 2. Move the folder somewhere permanent
+
+**This matters.** Chrome loads the extension from wherever this folder sits,
+every time you start it. If the folder is in Downloads and you tidy Downloads
+out later, the extension stops working.
+
+Drag it somewhere you will not touch — a folder in **Documents** is fine.
+
+### 3. Load it into Chrome
+
+1. In Chrome's address bar, type `chrome://extensions` and press Return.
+2. Turn on **Developer mode** — the switch in the top-right corner.
+3. Click **Load unpacked** (top-left).
+4. Select the folder you just moved, and click **Select**.
+
+You are picking the folder itself, not any file inside it. If Chrome complains
+about a missing manifest, you have probably picked the outer folder of two with
+similar names — open it and pick the inner one, the one with a file called
+`manifest.json` sitting directly inside.
+
+**Quiz Answers** now appears in the list with its blue icon.
+
+### 4. Pin it to the toolbar
+
+Click the puzzle-piece icon at the right of Chrome's address bar, then the pin
+next to **Quiz Answers**. Its icon now sits in the toolbar, ready to click.
+
+Chrome may ask at some point whether to keep extensions loaded this way. Say
+yes — this is normal for an extension you installed yourself rather than from
+the Web Store.
+
+## Get an OpenAI API key
+
+The extension has no account and no server of its own. It asks OpenAI your
+questions using a key that belongs to you, and you pay OpenAI directly for what
+you use — fractions of a cent per page.
+
+**A ChatGPT subscription is not the same thing.** Paying for ChatGPT Plus gives
+you nothing here; API usage is billed separately. This catches almost everyone
+out.
+
+1. Go to [platform.openai.com](https://platform.openai.com) and sign in, or
+   create an account.
+2. Add a payment method and buy some credit — the minimum top-up is a few
+   dollars and will last you thousands of questions.
+   *Settings → Billing → Add payment details.*
+3. While you are there, set a spending cap so nothing can run away with your
+   money. *Settings → Limits → set a monthly budget.*
+4. Go to **API keys** in the left sidebar and click **Create new secret key**.
+   Give it a name like "quiz extension" and create it.
+5. **Copy the key immediately.** It starts with `sk-` and OpenAI shows it to you
+   exactly once. If you lose it, delete it and make another — no harm done.
+6. Click the extension icon in Chrome → **Open settings** → paste the key into
+   the box → **Save**.
+7. Click **Test key**. It should say "Key works." If it does not, the message
+   tells you what is wrong.
+
+Treat the key like a password. Anyone who has it can spend your money. If it
+ever leaks, go back to that API keys page and delete it — that instantly makes
+it useless.
 
 ## Use it
 
@@ -67,6 +119,44 @@ You pay OpenAI directly, per use. With the default model a page of questions
 costs a fraction of a cent — a dollar of credit covers thousands of questions.
 Larger models cost more and are rarely more accurate on straightforward recall
 questions.
+
+## Share it with a friend
+
+There is no Web Store listing, so you pass them the folder directly. Two things
+to know before you do:
+
+- **The repository is private.** A friend clicking a GitHub link will see
+  nothing. Send them the files instead, or make the repository public.
+- **Everyone needs their own OpenAI key.** Do not share yours — there is no way
+  to cap what someone else spends on it, and whatever they run comes off your
+  card. Point them at *Get an OpenAI API key* above; it takes them five minutes.
+
+To send the files:
+
+1. In Finder, right-click the extension folder → **Compress**. You get a `.zip`.
+2. Send it by AirDrop, Google Drive, Dropbox, or WeTransfer.
+   **Not Gmail as an attachment** — Gmail looks inside zip files, sees the
+   `.js` files an extension is made of, and refuses to send it. A Drive link
+   works fine.
+3. Tell them to follow *Install it on your Mac* from step 2 onwards, then
+   *Get an OpenAI API key*.
+
+They will get their own copy with their own key and their own bill. Nothing is
+shared between you.
+
+Updates are manual: when the folder changes, send a new zip, and they replace
+their folder and click the refresh arrow on the extension's card in
+`chrome://extensions`.
+
+<details>
+<summary>What about the Chrome Web Store?</summary>
+
+Publishing would let people install it with one click and get updates
+automatically. It also means a one-off developer registration fee, a privacy
+policy, and a review that takes days and can be rejected — an extension that
+reads page content and talks to a third-party API gets looked at closely. For a
+handful of friends, the zip is the pragmatic answer.
+</details>
 
 ## Settings
 
