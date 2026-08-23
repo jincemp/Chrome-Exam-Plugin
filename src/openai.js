@@ -233,6 +233,7 @@ function buildChatBody(settings, prompt, caps) {
   if (caps.verbosity) body.verbosity = 'low';
   if (caps.temperature) body.temperature = 0;
   if (caps.maxTokens) body.max_completion_tokens = maxTokensFor(settings);
+  if (caps.store) body.store = false; // same promise as the Responses path
   return body;
 }
 

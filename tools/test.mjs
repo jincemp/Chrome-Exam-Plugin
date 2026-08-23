@@ -51,6 +51,9 @@ const { isInsecureBase, pageKey } = await import('../src/storage.js');
 
 const EXTRACT_SRC = readFileSync(path.join(root, 'src/extract.js'), 'utf8');
 
+// linkedom has no layout engine, so getComputedStyle is unavailable and the
+// extractor's visibility checks fall back to tag names and attributes. Cases
+// that turn on computed style (display:none, white-space) belong in tools/e2e.mjs.
 function extract(html, { selection = '', url = 'https://example.test/quiz' } = {}) {
   const { window, document } = parseHTML(`<!doctype html><html><body>${html}</body></html>`);
   window.top = window;

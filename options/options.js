@@ -113,6 +113,15 @@ $('test').addEventListener('click', async () => {
   const values = readForm();
   if (!values.apiKey) return setStatus('Enter a key first.', 'bad');
 
+  // Same gates as Save: this call carries the key to whatever host is in the
+  // box, so it must not be the one place that skips them.
+  if (isInsecureBase(values.baseUrl)) {
+    return setStatus('That base URL is plain http, which would send your API key unencrypted.', 'bad');
+  }
+  if (!(await ensureHostPermission(values.baseUrl))) {
+    return setStatus('Chrome denied access to that host.', 'bad');
+  }
+
   $('test').disabled = true;
   setStatus('Checking…');
   try {

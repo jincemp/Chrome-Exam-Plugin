@@ -278,16 +278,20 @@
       for (let i = 0; i < limit && hints.length < 60; i++) {
         const el = all[i];
         for (const attr of el.attributes) {
-          if (!HINT_ATTR_RE.test(attr.name)) continue;
+          // class="answer" / id="solution-3" name the container; the hint is the
+          // text inside it, and only when the page is hiding it from the reader.
+          if (attr.name === 'class' || attr.name === 'id') {
+            if (HINT_ATTR_RE.test(attr.value) && !isVisible(el, styleOf(el))) {
+              push(questionLabelFor(el), el.textContent);
+            }
+            continue;
+          }
 
-          if (attr.name.startsWith('data-')) {
-            // "c" means nothing without knowing which question it answers, and a
-            // list of bare letters de-duplicates into a misaligned answer key.
+          // data-answer="c" means nothing without knowing which question it
+          // answers, and a list of bare letters de-duplicates into a misaligned key.
+          if (attr.name.startsWith('data-') && HINT_ATTR_RE.test(attr.name)) {
             const label = questionLabelFor(el);
             if (label) push(label, attr.value);
-          } else if (attr.name === 'class' || attr.name === 'id') {
-            // The attribute only marks the container; its hidden text is the hint.
-            if (!isVisible(el, styleOf(el))) push(questionLabelFor(el), el.textContent);
           }
         }
       }

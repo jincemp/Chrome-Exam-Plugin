@@ -281,32 +281,46 @@ try {
   });
 
   const sent = body.input[0].content;
+  const pageText = sent.split('--- PAGE TEXT ---')[1].split('--- POSSIBLE')[0];
 
   check('the page text carries the questions and their options', () => {
-    assert.match(sent, /1\. A 240-volt branch circuit/);
-    assert.match(sent, /a\) 220\.80/);
-    assert.match(sent, /b\) 230\.34/);
-    assert.match(sent, /3\. State the total resistance/);
+    assert.match(pageText, /1\. A 240-volt branch circuit/);
+    assert.match(pageText, /a\) 220\.80/);
+    assert.match(pageText, /b\) 230\.34/);
+    assert.match(pageText, /3\. State the total resistance/);
   });
 
   check('each option is on its own line', () => {
-    const lines = sent.split('\n');
+    const lines = pageText.split('\n');
     assert.ok(lines.some((l) => l.trim() === 'a) 220.80'), 'options must not run together');
     assert.ok(lines.some((l) => l.trim() === 'b) 230.34'));
   });
 
   check('navigation, footer and screen-reader text are left out', () => {
-    assert.doesNotMatch(sent, /All courses/);
-    assert.doesNotMatch(sent, /All rights reserved/);
-    assert.doesNotMatch(sent, /Skip to main content/);
+    assert.doesNotMatch(pageText, /All courses/);
+    assert.doesNotMatch(pageText, /All rights reserved/);
+    assert.doesNotMatch(pageText, /Skip to main content/);
   });
 
-  check('a display:none answer key does not pollute the question text', () => {
-    assert.doesNotMatch(sent, /Correct answer: b/);
+  check('a display:none answer key stays out of the page text', () => {
+    // It is allowed in the labelled hints section below - just not here, where
+    // it would read as part of the question.
+    assert.doesNotMatch(pageText, /Correct answer: b/);
   });
 
   check('a data-answer hint is passed separately and labelled unverified', () => {
     assert.match(sent, /unverified/i);
+    assert.doesNotMatch(pageText, /unverified/i);
+  });
+
+  check('hints name the question they answer', () => {
+    const hints = sent.split('unverified) ---')[1] || '';
+    assert.match(hints, /Q1 -> b/, `hints were: ${hints.trim().slice(0, 200)}`);
+  });
+
+  check("a display:none answer panel is collected as a hint, not as page text", () => {
+    const hints = sent.split('unverified) ---')[1] || '';
+    assert.match(hints, /Correct answer: b/, `hints were: ${hints.trim().slice(0, 200)}`);
   });
 
   check('the run produced one answer per question', () => {
