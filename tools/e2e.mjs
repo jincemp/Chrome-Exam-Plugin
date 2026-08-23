@@ -53,6 +53,21 @@ const QUIZ_PAGE = `<!doctype html>
   <footer><p>&copy; 2026 Example Prep. All rights reserved.</p></footer>
 </body></html>`;
 
+/** 60 questions, long enough to force the page to be split into chunks. */
+const LONG_QUESTION_COUNT = 60;
+const LONG_PAGE = `<!doctype html><html><head><title>Question bank</title></head><body><main>
+${Array.from({ length: LONG_QUESTION_COUNT }, (_, i) => {
+  const n = i + 1;
+  return `<div class="question"><p>${n}. Considering an installation governed by the applicable code, and given the conditions described in the preceding paragraph, which of the following statements about scenario ${n} is correct?</p>
+    <ul>
+      <li><label><input type="radio" name="q${n}"> a) The first alternative for scenario ${n}, which is a long distractor.</label></li>
+      <li><label><input type="radio" name="q${n}"> b) The second alternative for scenario ${n}, which is also a long distractor.</label></li>
+      <li><label><input type="radio" name="q${n}"> c) The third alternative for scenario ${n}, longer still to pad the page out.</label></li>
+      <li><label><input type="radio" name="q${n}"> d) The fourth alternative for scenario ${n}, padding the page out further.</label></li>
+    </ul></div>`;
+}).join('\n')}
+</main></body></html>`;
+
 const ANSWERS = {
   questions: [
     { number: '1', label: 'b', answer: '230.34', why: '240 less 3 percent', confidence: 'high' },
@@ -74,6 +89,11 @@ const server = http.createServer((req, res) => {
 
   if (url.pathname === '/quiz.html') {
     res.writeHead(200, { 'content-type': 'text/html' }).end(QUIZ_PAGE);
+    return;
+  }
+
+  if (url.pathname === '/long.html') {
+    res.writeHead(200, { 'content-type': 'text/html' }).end(LONG_PAGE);
     return;
   }
 
@@ -114,14 +134,24 @@ const server = http.createServer((req, res) => {
     let raw = '';
     req.on('data', (c) => { raw += c; });
     req.on('end', () => {
-      seen.bodies.push(JSON.parse(raw));
+      const body = JSON.parse(raw);
+      seen.bodies.push(body);
+
+      // In chunked mode, answer exactly the questions this chunk contains, so
+      // the merge is tested against what was really sent.
+      let answers = ANSWERS;
+      if (mode === 'many') {
+        const numbers = [...body.input[0].content.matchAll(/^(\d+)\. Considering/gm)].map((m) => m[1]);
+        answers = { questions: numbers.map((n) => ({ number: n, label: 'c', answer: `The third alternative for scenario ${n}, longer still to pad the page out.`, why: '', confidence: 'high' })) };
+      }
+
       res.writeHead(200, { 'content-type': 'application/json' }).end(JSON.stringify({
         id: 'resp_test', status: 'completed', model: 'gpt-5.4-nano',
         output: [
           { type: 'reasoning', summary: [] },
           // A commentary message before the answer: the parser must skip it.
           { type: 'message', phase: 'commentary', content: [{ type: 'output_text', text: 'Weighing the options...' }] },
-          { type: 'message', phase: 'final_answer', content: [{ type: 'output_text', text: JSON.stringify(ANSWERS) }] },
+          { type: 'message', phase: 'final_answer', content: [{ type: 'output_text', text: JSON.stringify(answers) }] },
         ],
         usage: { input_tokens: 900, output_tokens: 80 },
       }));
@@ -191,7 +221,7 @@ try {
   await quiz.goto(`${origin}/quiz.html`);
   await quiz.waitForLoadState('domcontentloaded');
 
-  const runJob = () => driver.evaluate(async (quizUrl) => {
+  const runJob = (target = `${origin}/quiz.html`) => driver.evaluate(async (quizUrl) => {
     const [tab] = await chrome.tabs.query({ url: quizUrl });
     const key = `job:${tab.id}`;
     // Drop any previous run's record, or the poll below reads it and returns
@@ -207,7 +237,7 @@ try {
     }
     const { [key]: record } = await chrome.storage.session.get(key);
     return { scan, record, timedOut: true };
-  }, `${origin}/quiz.html`);
+  }, target);
 
   const job = await runJob();
 
@@ -324,6 +354,39 @@ try {
     );
     assert.equal(iconProbe.imageData, 'accepted', 'the ImageData fallback must work');
   });
+
+  /* ------------------------------------------------ a page too long for one request */
+
+  mode = 'many';
+  seen.bodies.length = 0;
+  const long = await context.newPage();
+  await long.goto(`${origin}/long.html`);
+  await long.waitForLoadState('domcontentloaded');
+  const chunked = await runJob(`${origin}/long.html`);
+
+  check('a long page is split across several requests', () => {
+    assert.equal(chunked.record?.status, 'done', JSON.stringify(chunked.record?.error));
+    assert.ok(seen.bodies.length > 1, `expected more than one request, got ${seen.bodies.length}`);
+  });
+
+  check('no question is lost or duplicated across the split', () => {
+    const numbers = (chunked.record.answers || []).map((a) => Number(a.number)).sort((x, y) => x - y);
+    assert.equal(new Set(numbers).size, numbers.length, 'answers must be deduplicated');
+    assert.deepEqual(numbers, Array.from({ length: 60 }, (_, i) => i + 1));
+  });
+
+  check('no chunk starts mid-question', () => {
+    for (const body of seen.bodies) {
+      const first = body.input[0].content.split('--- PAGE TEXT ---')[1].trim().split('\n')[0];
+      assert.match(first, /^\d+\. Considering/, `chunk began with: ${first.slice(0, 80)}`);
+    }
+  });
+
+  check('each chunk is told which part it is', () => {
+    assert.match(seen.bodies[0].input[0].content, /part 1 of \d+/);
+  });
+
+  await long.close();
 
   /* ----------------------------------------- a proxy without /v1/responses */
 
