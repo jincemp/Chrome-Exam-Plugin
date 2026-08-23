@@ -429,13 +429,18 @@ function stopKeepAlive() {
 chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
   (async () => {
     try {
-      if (message?.type === 'scan') {
+      if (!Number.isInteger(message?.tabId)) {
+        sendResponse({ ok: false, error: { message: 'Missing tab.' } });
+        return;
+      }
+
+      if (message.type === 'scan') {
         const page = await readPage(message.tabId);
         sendResponse({ ok: true, questionCount: page.questionCount, fromSelection: page.fromSelection });
         return;
       }
 
-      if (message?.type === 'start') {
+      if (message.type === 'start') {
         const settings = await getSettings();
         if (!settings.apiKey) {
           sendResponse({ ok: false, error: { message: 'No API key yet.', hint: 'Add one in settings.' } });
@@ -450,7 +455,7 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
         return;
       }
 
-      if (message?.type === 'cancel') {
+      if (message.type === 'cancel') {
         running.get(message.tabId)?.abort();
         running.delete(message.tabId);
         await clearJob(message.tabId);
@@ -459,7 +464,7 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
         return;
       }
 
-      sendResponse({ ok: false, error: { message: `Unknown command: ${message?.type}` } });
+      sendResponse({ ok: false, error: { message: `Unknown command: ${message.type}` } });
     } catch (err) {
       sendResponse({
         ok: false,

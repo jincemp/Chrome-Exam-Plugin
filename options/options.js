@@ -1,4 +1,4 @@
-import { DEFAULT_SETTINGS, getSettings, setSettings } from '../src/storage.js';
+import { DEFAULT_SETTINGS, getSettings, isInsecureBase, setSettings } from '../src/storage.js';
 import { listModels } from '../src/openai.js';
 
 const $ = (id) => document.getElementById(id);
@@ -69,6 +69,11 @@ $('reveal').addEventListener('click', () => {
 $('form').addEventListener('submit', async (event) => {
   event.preventDefault();
   const values = readForm();
+
+  if (isInsecureBase(values.baseUrl)) {
+    setStatus('Refusing to save: that base URL is plain http, which would send your API key unencrypted.', 'bad');
+    return;
+  }
 
   if (!(await ensureHostPermission(values.baseUrl))) {
     setStatus('Saved, but Chrome denied access to that host — requests to it will fail.', 'bad');

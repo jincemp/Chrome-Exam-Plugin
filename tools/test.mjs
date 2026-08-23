@@ -45,6 +45,7 @@ const { chunkText } = await import('../src/background.js');
 const { parseQuestions, relaxCaps, parseResponsesPayload, parseChatPayload, classifyError, TruncatedError } = await import('../src/openai.js');
 const { formatAnswer, formatAll, sortAnswers } = await import('../src/format.js');
 const { ANSWER_SCHEMA, buildPrompt } = await import('../src/prompt.js');
+const { isInsecureBase, pageKey } = await import('../src/storage.js');
 
 /* ------------------------------------------------------- extractor harness */
 
@@ -512,6 +513,21 @@ test('prompt: losing schema enforcement adds the JSON instruction', () => {
 test('prompt: scraped hints are labelled unverified', () => {
   const p = buildPrompt({ text: '1. A question?', hints: 'answer: b' });
   assert.match(p.user, /unverified/i);
+});
+
+/* ---------------------------------------------------------------- settings */
+
+test('settings: a plain-http proxy is rejected, except on this machine', () => {
+  assert.equal(isInsecureBase('http://proxy.example.com/v1'), true);
+  assert.equal(isInsecureBase('http://localhost:11434/v1'), false);
+  assert.equal(isInsecureBase('http://127.0.0.1:1234/v1'), false);
+  assert.equal(isInsecureBase('https://api.openai.com/v1'), false);
+  assert.equal(isInsecureBase('https://proxy.example.com/v1'), false);
+});
+
+test('settings: the page key ignores the fragment but not the path', () => {
+  assert.equal(pageKey('https://x.test/exam#q3'), pageKey('https://x.test/exam'));
+  assert.notEqual(pageKey('https://x.test/exam/2'), pageKey('https://x.test/exam'));
 });
 
 /* ------------------------------------------------------------------ report */

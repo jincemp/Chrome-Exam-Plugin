@@ -23,6 +23,19 @@ export async function setSettings(patch) {
   await chrome.storage.local.set(patch);
 }
 
+/**
+ * Plain http would put the API key on the wire in the clear. A server on this
+ * machine never leaves it, so those are allowed.
+ */
+export function isInsecureBase(baseUrl) {
+  try {
+    const u = new URL(baseUrl);
+    return u.protocol === 'http:' && !['localhost', '127.0.0.1', '[::1]'].includes(u.hostname);
+  } catch {
+    return false; // malformed URLs fail later, with a clearer message
+  }
+}
+
 export const jobKey = (tabId) => `job:${tabId}`;
 
 /** Same page? Ignore the hash - anchors do not change the questions. */
