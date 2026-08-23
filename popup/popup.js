@@ -79,8 +79,9 @@ function renderAnswers(job) {
 
   const meta = [];
   if (answers.length) meta.push(`${answers.length} answer${answers.length === 1 ? '' : 's'}`);
-  if (job.meta?.model) meta.push(job.meta.model);
+  if (job.meta?.missingChunks) meta.push(`${job.meta.missingChunks} part(s) failed`);
   if (job.meta?.truncated) meta.push('page truncated');
+  if (job.meta?.model) meta.push(job.meta.model);
   $('answers-meta').textContent = meta.join(' · ');
 
   show('answers');

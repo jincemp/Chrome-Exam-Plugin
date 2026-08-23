@@ -232,7 +232,7 @@
         if (!/^https?:$/.test(new URL(origin).protocol)) continue;
         if (origin === location.origin) continue;
         const box = frame.getBoundingClientRect?.();
-        if (box && (box.width < 120 || box.height < 120)) continue; // trackers and ad slots
+        if (box && (box.width < 250 || box.height < 200)) continue; // trackers and ad slots
         origins.add(origin);
         if (origins.size >= 5) break;
       }

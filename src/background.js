@@ -132,8 +132,11 @@ async function readPage(tabId) {
 
   // Reached nothing and there is an embedded frame from another origin? That is
   // where the quiz lives, and activeTab does not cover it.
-  const blocked = (top.frameOrigins || []).filter((origin) => !frames.some((f) => f.url?.startsWith(origin)));
-  if (questionCount === 0 && blocked.length) {
+  const topFrame = results.map((r) => r?.result).find((r) => r?.isTop) || top;
+  const blocked = (topFrame.frameOrigins || []).filter((origin) => !frames.some((f) => f.url?.startsWith(origin)));
+  // A page with real content and a stray ad frame is not this case; a page that
+  // is little more than a wrapper around someone else's quiz is.
+  if (questionCount === 0 && text.length < 1500 && blocked.length) {
     throw new OpenAIError('The questions are inside an embedded frame.', {
       kind: 'frames',
       hint: 'Chrome needs your permission to read it.',
@@ -252,15 +255,18 @@ async function runChunk(settings, page, chunk, part, parts, signal, depth = 0) {
 }
 
 async function runJob(tabId) {
-  const settings = await getSettings();
   const controller = new AbortController();
   running.get(tabId)?.abort();
   running.set(tabId, controller);
-  const keepAlive = startKeepAlive();
+  startKeepAlive();
 
-  const update = (patch) => setJob(tabId, { tabId, ...patch });
+  // A re-run replaces us in `running`. From that moment the newer run owns this
+  // tab's job record and badge, and we must not touch either on our way out.
+  const isCurrent = () => running.get(tabId) === controller;
+  const update = (patch) => (isCurrent() ? setJob(tabId, { tabId, ...patch }) : Promise.resolve());
 
   try {
+    const settings = await getSettings();
     await markIdle(tabId);
 
     // Record the URL up front: the popup matches a job to the tab it is looking
@@ -306,12 +312,13 @@ async function runJob(tabId) {
     );
     if (controller.signal.aborted) return;
 
-    // Every worker shares one signal, so a real failure shows up in all of them;
-    // surface the first one rather than reporting a half-empty answer sheet.
+    // Workers fail independently, so some chunks may have come back. Report what
+    // we have and say what is missing; only give up when nothing survived.
     const failure = outcomes.find((o) => o.status === 'rejected');
-    if (failure) throw failure.reason;
+    const finished = groups.filter(Boolean);
+    if (failure && !finished.length) throw failure.reason;
 
-    const answers = mergeAnswers(groups.filter(Boolean));
+    const answers = mergeAnswers(finished);
     await update({
       status: 'done',
       url: page.url,
@@ -319,12 +326,14 @@ async function runJob(tabId) {
       meta: {
         model: settings.model,
         chunks: chunks.length,
+        missingChunks: chunks.length - finished.length,
         truncated: page.truncated,
         fromSelection: page.fromSelection,
       },
     });
-    await markReady(tabId, answers.length);
+    if (isCurrent()) await markReady(tabId, answers.length);
   } catch (err) {
+    if (!isCurrent()) return; // a newer run owns this tab now
     if (err?.name === 'AbortError' || controller.signal.aborted) {
       await clearJob(tabId);
       await markIdle(tabId);
@@ -340,7 +349,7 @@ async function runJob(tabId) {
     await update({ status: 'error', url, error });
     await markFailed(tabId);
   } finally {
-    stopKeepAlive(keepAlive);
+    stopKeepAlive();
     if (running.get(tabId) === controller) running.delete(tabId);
   }
 }
@@ -357,7 +366,6 @@ function startKeepAlive() {
   if (!keepAliveTimer) {
     keepAliveTimer = setInterval(() => { chrome.runtime.getPlatformInfo().catch(() => {}); }, 20000);
   }
-  return true;
 }
 
 function stopKeepAlive() {
@@ -389,7 +397,7 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
           sendResponse({ ok: true, alreadyRunning: true });
           return;
         }
-        runJob(message.tabId);
+        runJob(message.tabId).catch(() => { /* runJob records its own failures */ });
         sendResponse({ ok: true });
         return;
       }
@@ -407,7 +415,12 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
     } catch (err) {
       sendResponse({
         ok: false,
-        error: { message: err?.message || 'Unexpected error.', hint: err?.hint || '' },
+        error: {
+          message: err?.message || 'Unexpected error.',
+          hint: err?.hint || '',
+          kind: err?.kind || '',
+          origins: err?.origins || [],
+        },
       });
     }
   })();
