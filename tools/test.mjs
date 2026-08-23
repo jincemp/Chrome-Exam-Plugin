@@ -126,6 +126,51 @@ test('extract: counts numbered questions', () => {
   assert.equal(extract(QUIZ).questionCount, 3);
 });
 
+test('extract: numbered prose headings are not questions', () => {
+  const article = `<main>
+    <h2>1. Introduction</h2><p>Grounding matters.</p>
+    <h2>2. Bonding</h2><p>So does bonding.</p>
+    <h2>3. Conclusion</h2><p>The end.</p>
+  </main>`;
+  assert.equal(extract(article).questionCount, 0);
+});
+
+test('extract: numeric option labels do not inflate the count', () => {
+  const page = `<main>
+    <p>1. Which voltage is correct?</p>
+    <p>1) 120 V</p><p>2) 208 V</p><p>3) 240 V</p><p>4) 480 V</p>
+  </main>`;
+  assert.equal(extract(page).questionCount, 1);
+});
+
+test('extract: unnumbered options are still counted structurally', () => {
+  const forms = `<main>
+    <div role="radiogroup"><div role="radio">Yes</div><div role="radio">No</div></div>
+    <div role="radiogroup"><div role="radio">True</div><div role="radio">False</div></div>
+  </main>`;
+  assert.equal(extract(forms).questionCount, 2);
+});
+
+test('extract: an aria-checked option is marked selected', () => {
+  const r = extract('<main><div role="radiogroup"><div role="radio" aria-checked="true">Yes</div><div role="radio">No</div></div></main>');
+  assert.match(r.text, /\[selected\] Yes/);
+});
+
+test('extract: screen-reader-only text is left out', () => {
+  const r = extract('<main><span class="sr-only">Skip to content</span><p>1. A real question?</p></main>');
+  assert.doesNotMatch(r.text, /Skip to content/);
+});
+
+test('extract: nested question containers are counted once', () => {
+  const nested = `<main>
+    <div class="question-wrapper"><div class="question"><p>Pick one</p>
+      <input type="radio" name="q1"><input type="radio" name="q1"></div></div>
+    <div class="question-wrapper"><div class="question"><p>Pick one</p>
+      <input type="radio" name="q2"><input type="radio" name="q2"></div></div>
+  </main>`;
+  assert.equal(extract(nested).questionCount, 2);
+});
+
 test('extract: picks up a data-answer attribute as a hint', () => {
   assert.match(extract(QUIZ).hints, /\bc\b/);
 });

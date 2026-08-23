@@ -55,6 +55,8 @@ body {
 .cta:disabled { opacity: 0.6; cursor: default; }
 
 .note { margin: 8px 2px 0; color: var(--muted); font-size: 12px; }
+
+#grant { margin: 12px 0 10px; }
 .error { margin: 2px 2px 8px; color: var(--danger); }
 
 .link-btn {

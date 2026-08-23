@@ -38,19 +38,37 @@
   const QUESTION_LINE_RE = /^\s*(?:q(?:uestion)?\s*[.:#-]?\s*)?(\d{1,3})\s*[.):\]]\s+\S/i;
   const OPTION_LINE_RE = /^\s*[(\[]?([a-jA-J]|[ivxIVX]{1,4})[.):\]]\s+\S/;
 
-  const isVisible = (el) => {
+  // Text a sighted reader cannot see is noise at best and a wrong answer at
+  // worst, so it is dropped - including the screen-reader-only idioms that
+  // computed style alone does not catch.
+  const SR_ONLY_RE = /(^|[\s-])(sr-only|visually-?hidden|screen-?reader-?(text|only)|a11y-hidden)([\s-]|$)/i;
+
+  // Anything not in this set puts its text on its own line. Keyed on computed
+  // display rather than tag name, so a <span style="display:block"> option
+  // breaks the line and a <div style="display:inline"> does not.
+  const INLINE_DISPLAYS = new Set(['inline', 'inline-block', 'inline-flex', 'inline-grid', 'contents', 'ruby', 'ruby-text', 'ruby-base']);
+
+  /** One style resolution per element, reused for both questions we ask of it. */
+  const styleOf = (el) => {
+    try {
+      return getComputedStyle(el);
+    } catch {
+      return null; // no layout engine (tests) - fall back to tag names
+    }
+  };
+
+  const isVisible = (el, cs) => {
     try {
       if (el.hasAttribute('hidden')) return false;
       if (el.getAttribute('aria-hidden') === 'true') return false;
-      if (typeof el.checkVisibility === 'function') {
-        return el.checkVisibility({ checkVisibilityCSS: true, visibilityProperty: true });
-      }
-      const cs = getComputedStyle(el);
-      return cs.display !== 'none' && cs.visibility !== 'hidden';
-    } catch {
-      return true;
-    }
+      const cls = el.getAttribute('class');
+      if (cls && SR_ONLY_RE.test(cls)) return false;
+    } catch { /* exotic element */ }
+    if (!cs) return true;
+    return cs.display !== 'none' && cs.visibility !== 'hidden' && cs.opacity !== '0';
   };
+
+  const isBlock = (el, cs) => (cs ? !INLINE_DISPLAYS.has(cs.display) : BLOCK_TAGS.has(el.tagName));
 
   const looksLikeBoilerplate = (el) => {
     if (BOILERPLATE_TAGS.has(el.tagName)) return true;
@@ -74,10 +92,16 @@
     const el = /** @type {Element} */ (node);
     if (SKIP_TAGS.has(el.tagName)) return;
     if (opts.dropBoilerplate && looksLikeBoilerplate(el)) return;
-    if (!isVisible(el)) return;
 
-    const block = BLOCK_TAGS.has(el.tagName);
+    const cs = styleOf(el);
+    if (!isVisible(el, cs)) return;
+
+    // <br> has no box of its own but always breaks.
+    const block = el.tagName === 'BR' || isBlock(el, cs);
     if (block) out.push('\n');
+
+    // Google Forms and friends build radios out of divs.
+    if (el.getAttribute('aria-checked') === 'true') out.push('[selected] ');
 
     // Radio / checkbox options often carry their text only in a sibling label,
     // but the checked state is worth recording either way.
@@ -187,7 +211,7 @@
           if (attr.name.startsWith('data-') || attr.name === 'class' || attr.name === 'id') {
             if (attr.name === 'class' || attr.name === 'id') {
               // Class/id only marks the container - its text is the hint.
-              if (!isVisible(el)) push(el.textContent);
+              if (!isVisible(el, styleOf(el))) push(el.textContent);
             } else {
               push(attr.value);
             }
@@ -201,18 +225,61 @@
 
   /* ------------------------------------------------------------------ counts */
 
-  const countQuestions = (text) => {
+  /*
+   * Counting is deliberately conservative in two directions at once: a numbered
+   * heading in an article ("1. Introduction") is not a question, and a numbered
+   * option ("1) 3.2 V") is not one either. A numbered line only counts when it
+   * either asks something or is followed by options.
+   */
+  const countFromText = (text) => {
+    const lines = text.split('\n');
+    const optionAt = lines.map((l) => OPTION_LINE_RE.test(l));
     const numbers = new Set();
     let options = 0;
-    for (const line of text.split('\n')) {
-      const q = QUESTION_LINE_RE.exec(line);
-      if (q) numbers.add(q[1]);
-      else if (OPTION_LINE_RE.test(line)) options++;
+
+    for (let i = 0; i < lines.length; i++) {
+      if (optionAt[i]) options++;
+      const q = QUESTION_LINE_RE.exec(lines[i]);
+      if (!q) continue;
+
+      let followingOptions = 0;
+      for (let j = i + 1; j < Math.min(i + 9, lines.length); j++) {
+        if (optionAt[j]) followingOptions++;
+      }
+      if (followingOptions >= 2 || /\?\s*$/.test(lines[i]) || /\b(which|what|how|why|when|where|who|calculate|find|determine|true or false)\b/i.test(lines[i])) {
+        numbers.add(q[1]);
+      }
     }
-    // Fall back to the option count when numbering is unusual.
+
+    // Options with no usable numbering at all: estimate from the option count.
     if (numbers.size === 0 && options >= 2) return Math.max(1, Math.round(options / 4));
     return numbers.size;
   };
+
+  /** Some quizzes number nothing at all; the markup still gives them away. */
+  const QUESTION_CONTAINER_SELECTOR =
+    '[data-question-id], [data-question], [class*="question" i], [id^="question" i]';
+
+  const countFromStructure = () => {
+    try {
+      // One radio group per question, whether native or ARIA.
+      const groups = new Set();
+      for (const input of document.querySelectorAll('input[type="radio"][name]')) {
+        groups.add(input.getAttribute('name'));
+      }
+      const aria = document.querySelectorAll('[role="radiogroup"]').length;
+
+      // Question containers nest (a wrapper inside a wrapper); count the outermost.
+      const containers = [...document.querySelectorAll(QUESTION_CONTAINER_SELECTOR)]
+        .filter((el) => !el.parentElement?.closest(QUESTION_CONTAINER_SELECTOR));
+
+      return Math.max(groups.size, aria, containers.length);
+    } catch {
+      return 0;
+    }
+  };
+
+  const countQuestions = (text) => Math.max(countFromText(text), countFromStructure());
 
   /* ------------------------------------------------------------- sub-frames */
 
@@ -238,6 +305,34 @@
       }
     } catch { /* best-effort */ }
     return [...origins];
+  };
+
+  /* ---------------------------------------------------------------- gaps */
+
+  /** Questions drawn on a canvas cannot be read at all; say so rather than under-report. */
+  const unreadableRegions = () => {
+    try {
+      let count = 0;
+      for (const c of document.querySelectorAll('canvas')) {
+        const box = c.getBoundingClientRect?.();
+        if (!box || (box.width > 200 && box.height > 100)) count++;
+      }
+      return count;
+    } catch {
+      return 0;
+    }
+  };
+
+  /** A virtualised list only materialises the rows on screen. */
+  const hasWindowedList = () => {
+    try {
+      for (const el of document.querySelectorAll('[style*="overflow"], [class*="scroll" i], [class*="virtual" i], main, section, div')) {
+        if (el.clientHeight > 200 && el.scrollHeight > el.clientHeight * 3) return true;
+      }
+      return false;
+    } catch {
+      return false;
+    }
   };
 
   /* -------------------------------------------------------------------- run */
@@ -267,13 +362,15 @@
   return {
     ok: true,
     frameOrigins: isTop ? crossOriginFrames() : [],
+    unreadable: unreadableRegions(),
+    windowed: hasWindowedList(),
     isTop,
     url: location.href,
     title: document.title || '',
     text,
     selection,
     hints: isTop ? collectHints() : '',
-    questionCount: countQuestions(selection || text),
+    questionCount: selection ? countFromText(selection) : countQuestions(text),
     truncated,
   };
 })();

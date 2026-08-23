@@ -52,7 +52,7 @@ input, textarea, select {
   font: inherit;
 }
 input:focus, textarea:focus, select:focus { outline: 2px solid var(--accent); outline-offset: -1px; border-color: transparent; }
-textarea { resize: vertical; }
+textarea { display: block; resize: vertical; }
 
 .key-row { display: flex; gap: 8px; }
 .key-row input { flex: 1; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }

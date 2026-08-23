@@ -1,0 +1,17 @@
+{
+  "name": "quiz-answers-extension",
+  "private": true,
+  "version": "1.0.0",
+  "description": "Development tooling for the Quiz Answers Chrome extension. The extension itself has no runtime dependencies.",
+  "type": "module",
+  "scripts": {
+    "test": "node tools/test.mjs",
+    "check": "bash tools/check.sh",
+    "preview": "node tools/preview.mjs",
+    "icons": "python3 tools/make_icons.py"
+  },
+  "devDependencies": {
+    "linkedom": "^0.18.0",
+    "playwright-core": "^1.48.0"
+  }
+}

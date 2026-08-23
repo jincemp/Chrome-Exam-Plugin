@@ -40,8 +40,13 @@ function renderAnswers(job) {
   for (const a of answers) {
     const li = document.createElement('li');
 
-    const row = document.createElement('button');
-    row.type = 'button';
+    const why = (a.why || '').trim();
+    const interactive = Boolean(why) && settings.showWhy;
+
+    // A row that reveals nothing should not be a button - it would be a focus
+    // stop that does nothing and reads as actionable to a screen reader.
+    const row = document.createElement(interactive ? 'button' : 'div');
+    if (interactive) row.type = 'button';
     row.className = 'row';
     if (a.confidence === 'low') row.classList.add('low');
 
@@ -62,8 +67,7 @@ function renderAnswers(job) {
     row.append(q, ans);
     li.append(row);
 
-    const why = (a.why || '').trim();
-    if (why && settings.showWhy) {
+    if (interactive) {
       row.classList.add('has-why');
       row.title = 'Show reasoning';
       const p = document.createElement('p');
@@ -81,6 +85,8 @@ function renderAnswers(job) {
   if (answers.length) meta.push(`${answers.length} answer${answers.length === 1 ? '' : 's'}`);
   if (job.meta?.missingChunks) meta.push(`${job.meta.missingChunks} part(s) failed`);
   if (job.meta?.truncated) meta.push('page truncated');
+  if (job.meta?.windowed) meta.push('scroll and re-run for more');
+  if (job.meta?.unreadable) meta.push('some content is images');
   if (job.meta?.model) meta.push(job.meta.model);
   $('answers-meta').textContent = meta.join(' · ');
 

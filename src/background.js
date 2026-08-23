@@ -151,6 +151,8 @@ async function readPage(tabId) {
     hints: top.hints || '',
     questionCount,
     truncated: frames.some((f) => f.truncated),
+    windowed: frames.some((f) => f.windowed),
+    unreadable: Math.max(...frames.map((f) => f.unreadable || 0), 0),
     fromSelection: false,
   };
 }
@@ -328,6 +330,8 @@ async function runJob(tabId) {
         chunks: chunks.length,
         missingChunks: chunks.length - finished.length,
         truncated: page.truncated,
+        windowed: page.windowed,
+        unreadable: page.unreadable,
         fromSelection: page.fromSelection,
       },
     });
