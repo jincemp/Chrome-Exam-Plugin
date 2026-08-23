@@ -140,6 +140,23 @@ popup does not cancel it.
 | `options/` | Settings page |
 | `tools/make_icons.py` | Regenerates `icons/` from code |
 | `tools/check.sh` | Syntax-checks every file |
+| `tools/test.mjs` | Unit tests, including the extractor against a real DOM |
+| `tools/e2e.mjs` | Loads the extension into Chromium against a mock OpenAI |
+| `tools/preview.mjs` | Screenshots every popup and options state |
+
+### Running the checks
+
+```sh
+npm install     # dev tooling only — the extension itself has no dependencies
+npm test        # unit tests
+npm run e2e     # end-to-end, in a real browser
+npm run check   # syntax
+npm run preview # writes screenshots/
+```
+
+`npm run e2e` loads the extension into Chromium, points it at a local mock of
+the OpenAI API, and drives a real quiz page through the service worker — it is
+what catches the things unit tests cannot, like Chrome rejecting an API call.
 
 ## Limitations
 

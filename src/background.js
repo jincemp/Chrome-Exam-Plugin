@@ -55,12 +55,20 @@ async function toImageData(paths) {
   return iconDataCache.get(key);
 }
 
+// Chrome rejects the `path` form from a service worker (verified in tools/e2e.mjs),
+// but that has changed across versions - try it once, then stop asking.
+let iconPathWorks = true;
+
 async function setIcon(tabId, done) {
   const path = done ? DONE_ICON : IDLE_ICON;
-  try {
-    await chrome.action.setIcon({ tabId, path });
-    return;
-  } catch { /* fall through to decoding it ourselves */ }
+  if (iconPathWorks) {
+    try {
+      await chrome.action.setIcon({ tabId, path });
+      return;
+    } catch {
+      iconPathWorks = false;
+    }
+  }
   try {
     await chrome.action.setIcon({ tabId, imageData: await toImageData(path) });
   } catch { /* the tab went away */ }
