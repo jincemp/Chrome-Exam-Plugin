@@ -42,10 +42,11 @@ globalThis.chrome = {
 };
 
 const { chunkText, mergeAnswers } = await import('../src/background.js');
-const { parseQuestions, relaxCaps, parseResponsesPayload, parseChatPayload, classifyError, TruncatedError } = await import('../src/openai.js');
+const { parseQuestions, relaxCaps, parseResponsesPayload, parseChatPayload, classifyError, TruncatedError,
+        buildResponsesBody, buildChatBody, initialCaps } = await import('../src/openai.js');
 const { formatAnswer, formatAll, sortAnswers } = await import('../src/format.js');
 const { ANSWER_SCHEMA, buildPrompt } = await import('../src/prompt.js');
-const { isInsecureBase, pageKey } = await import('../src/storage.js');
+const { DEFAULT_SETTINGS, isInsecureBase, pageKey } = await import('../src/storage.js');
 
 /* ------------------------------------------------------- extractor harness */
 
@@ -631,6 +632,60 @@ test('prompt: losing schema enforcement adds the JSON instruction', () => {
 test('prompt: scraped hints are labelled unverified', () => {
   const p = buildPrompt({ text: '1. A question?', hints: 'answer: b' });
   assert.match(p.user, /unverified/i);
+});
+
+/* ------------------------------------------------------------ request body */
+
+const PROMPT = { system: 'be an answer key', user: '1. What is 2+2?' };
+const bodyFor = (overrides = {}) => {
+  const settings = { ...DEFAULT_SETTINGS, apiKey: 'sk-x', ...overrides };
+  return buildResponsesBody(settings, PROMPT, initialCaps(settings));
+};
+
+test('body: the shipped defaults produce a valid Responses request', () => {
+  const body = bodyFor();
+  assert.equal(body.model, DEFAULT_SETTINGS.model);
+  assert.equal(body.text.format.type, 'json_schema');
+  assert.equal(body.text.format.name, 'answer_sheet', 'name is flat, not wrapped in json_schema');
+  assert.equal(body.store, false);
+  assert.equal('max_tokens' in body, false);
+  assert.ok(body.max_output_tokens > 0);
+});
+
+test('body: the default model is a reasoning model, so no temperature is sent', () => {
+  const body = bodyFor();
+  assert.equal('temperature' in body, false, 'gpt-5.x rejects temperature with a 400');
+  assert.equal(body.reasoning.effort, DEFAULT_SETTINGS.effort);
+});
+
+test('body: the default effort is one the API accepts', () => {
+  assert.ok(['none', 'minimal', 'low', 'medium', 'high'].includes(DEFAULT_SETTINGS.effort));
+});
+
+test('body: more thinking gets a bigger output budget, since reasoning is billed there', () => {
+  const low = bodyFor({ effort: 'low' }).max_output_tokens;
+  const medium = bodyFor({ effort: 'medium' }).max_output_tokens;
+  const high = bodyFor({ effort: 'high' }).max_output_tokens;
+  assert.ok(medium > low, 'medium must have more room than low');
+  assert.ok(high > medium, 'high must have more room than medium');
+});
+
+test('body: a non-reasoning model gets temperature 0 and no reasoning block', () => {
+  const settings = { ...DEFAULT_SETTINGS, apiKey: 'sk-x', model: 'some-proxy-model' };
+  const body = buildResponsesBody(settings, PROMPT, initialCaps(settings));
+  assert.equal(body.temperature, 0);
+  assert.equal('reasoning' in body, false);
+});
+
+test('body: the chat shape wraps the schema and nests nothing', () => {
+  const settings = { ...DEFAULT_SETTINGS, apiKey: 'sk-x' };
+  const body = buildChatBody(settings, PROMPT, initialCaps(settings));
+  assert.equal(body.response_format.json_schema.name, 'answer_sheet');
+  assert.equal(body.reasoning_effort, DEFAULT_SETTINGS.effort, 'flat on chat completions');
+  assert.equal(body.verbosity, 'low');
+  assert.ok(body.max_completion_tokens > 0);
+  assert.equal('max_tokens' in body, false);
+  assert.equal(body.store, false);
 });
 
 /* ---------------------------------------------------------------- settings */

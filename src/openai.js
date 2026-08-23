@@ -178,7 +178,7 @@ export async function listModels(settings) {
  * off and the request is retried, so an unfamiliar or proxied model still works
  * without the user touching settings.
  */
-function initialCaps(settings) {
+export function initialCaps(settings) {
   const reasoning = REASONING_RE.test(settings.model || '');
   return {
     // 'json_schema' -> 'json_object' -> 'none'. Some gateways support neither.
@@ -191,7 +191,7 @@ function initialCaps(settings) {
   };
 }
 
-function buildResponsesBody(settings, prompt, caps) {
+export function buildResponsesBody(settings, prompt, caps) {
   const body = {
     model: settings.model,
     instructions: prompt.system,
@@ -214,7 +214,7 @@ function buildResponsesBody(settings, prompt, caps) {
   return body;
 }
 
-function buildChatBody(settings, prompt, caps) {
+export function buildChatBody(settings, prompt, caps) {
   const body = {
     model: settings.model,
     messages: [
