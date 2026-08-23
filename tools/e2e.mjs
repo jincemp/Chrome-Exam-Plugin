@@ -346,6 +346,32 @@ try {
   });
   console.log(`note setIcon path: ${iconProbe.path}`);
 
+  // Confirms the "ready" icon really is the green tick, not the idle one.
+  const iconColours = await worker.evaluate(async () => {
+    const average = async (file) => {
+      const blob = await (await fetch(chrome.runtime.getURL(file))).blob();
+      const bitmap = await createImageBitmap(blob);
+      const canvas = new OffscreenCanvas(bitmap.width, bitmap.height);
+      const ctx = canvas.getContext('2d');
+      ctx.drawImage(bitmap, 0, 0);
+      const { data } = ctx.getImageData(0, 0, canvas.width, canvas.height);
+      let r = 0, g = 0, b = 0, n = 0;
+      for (let i = 0; i < data.length; i += 4) {
+        if (data[i + 3] < 200) continue;      // ignore the rounded corners
+        if (data[i] > 240 && data[i + 1] > 240 && data[i + 2] > 240) continue; // ignore the white mark
+        r += data[i]; g += data[i + 1]; b += data[i + 2]; n++;
+      }
+      return { r: r / n, g: g / n, b: b / n, n };
+    };
+    return { idle: await average('icons/icon48.png'), done: await average('icons/icon-done48.png') };
+  });
+
+  check('the ready icon is the green tick and the idle icon is not', () => {
+    assert.ok(iconColours.done.g > iconColours.done.r * 1.5, `done icon is not green: ${JSON.stringify(iconColours.done)}`);
+    assert.ok(iconColours.done.g > iconColours.done.b * 1.5, `done icon is not green: ${JSON.stringify(iconColours.done)}`);
+    assert.ok(iconColours.idle.b > iconColours.idle.g * 1.5, `idle icon is not indigo: ${JSON.stringify(iconColours.idle)}`);
+  });
+
   check('the service worker can set the icon at all', () => {
     assert.equal(
       iconProbe.path === 'accepted' || iconProbe.imageData === 'accepted',
