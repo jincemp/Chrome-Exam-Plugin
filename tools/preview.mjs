@@ -50,11 +50,24 @@ function stub(state) {
   };
 }
 
+/** A page with many questions, to check the list scrolls rather than growing. */
+const MANY = Array.from({ length: 40 }, (_, i) => ({
+  number: String(i + 1),
+  label: 'abcd'[i % 4],
+  answer: i % 7 === 0
+    ? 'A raceway installed in a wet location shall be listed for the purpose and sealed at both ends against moisture ingress'
+    : `${(100 + i * 3.17).toFixed(2)} V`,
+  why: i % 3 === 0 ? 'Table 310.16 at 75 degrees' : '',
+  confidence: i % 9 === 0 ? 'low' : 'high',
+}));
+
 const STATES = {
   'popup-setup': { settings: { ...SETTINGS, apiKey: '' }, job: null },
   'popup-idle': { settings: SETTINGS, job: null },
   'popup-busy': { settings: SETTINGS, job: { status: 'thinking', url: 'https://example.test/exam', progress: { done: 1, total: 3 } } },
   'popup-answers': { settings: SETTINGS, job: { status: 'done', url: 'https://example.test/exam', answers: ANSWERS, meta: { model: 'gpt-5.4-nano', chunks: 1 } } },
+  'popup-many': { settings: SETTINGS, job: { status: 'done', url: 'https://example.test/exam', answers: MANY, meta: { model: 'gpt-5.4-nano', chunks: 4 } } },
+  'popup-partial': { settings: SETTINGS, job: { status: 'done', url: 'https://example.test/exam', answers: ANSWERS.slice(0, 3), meta: { model: 'gpt-5.4-nano', chunks: 4, missingChunks: 2, partialError: { message: 'OpenAI is rate limiting this key.', hint: 'Waiting a few seconds usually clears it.' }, windowed: true } } },
   'popup-error': { settings: SETTINGS, job: { status: 'error', url: 'https://example.test/exam', error: { message: 'Your OpenAI account is out of credit.', hint: 'Add credit at platform.openai.com/settings/organization/billing.' } } },
   'popup-frames': { settings: SETTINGS, job: { status: 'error', url: 'https://example.test/exam', error: { message: 'The questions are inside an embedded frame.', hint: 'Chrome needs your permission to read it.', kind: 'frames', origins: ['https://quiz.example.com'] } } },
 };
@@ -82,7 +95,7 @@ const browser = await chromium.launch({ executablePath: '/opt/pw-browsers/chromi
 
 for (const scheme of ['light', 'dark']) {
   for (const [name, state] of Object.entries(STATES)) {
-    const context = await browser.newContext({ viewport: { width: 300, height: 460 }, colorScheme: scheme, deviceScaleFactor: 2 });
+    const context = await browser.newContext({ viewport: { width: 300, height: 520 }, colorScheme: scheme, deviceScaleFactor: 2 });
     const page = await context.newPage();
     await page.addInitScript(stub, state);
     page.on('pageerror', (e) => console.error(`  ${name}: ${e.message}`));

@@ -54,8 +54,8 @@ Two things worth knowing:
 - **Click an answer** to see a one-line reason for it. Turn this off in settings
   if you would rather keep the list bare.
 
-Answers are kept until you close Chrome or navigate that tab elsewhere. Nothing
-is written to disk except your settings.
+Answers are kept until you reload the page, navigate that tab elsewhere, or
+quit Chrome. Nothing is written to disk except your settings.
 
 ## Cost
 

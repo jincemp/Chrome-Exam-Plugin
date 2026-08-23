@@ -87,8 +87,8 @@ function renderAnswers(job) {
     meta.push(`${job.meta.missingChunks} part${job.meta.missingChunks === 1 ? '' : 's'} failed`);
   }
   if (job.meta?.truncated) meta.push('page truncated');
-  if (job.meta?.windowed) meta.push('scroll and re-run for more');
-  if (job.meta?.unreadable) meta.push('some content is images');
+  if (job.meta?.windowed) meta.push('partly loaded');
+  if (job.meta?.unreadable) meta.push('has images');
   if (job.meta?.model) meta.push(job.meta.model);
   $('answers-meta').textContent = meta.join(' · ');
 

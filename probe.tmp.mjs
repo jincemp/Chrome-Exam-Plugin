@@ -76,6 +76,18 @@ for (const scheme of ['light', 'dark']) {
       hasAriaExpanded: [...list.querySelectorAll('button.row')].every(b=>b.hasAttribute('aria-expanded')),
       colorScheme: getComputedStyle(document.documentElement).colorScheme,
       bodyBg: getComputedStyle(document.body).backgroundColor,
+      footH: document.querySelector('.foot').getBoundingClientRect().height,
+      metaH: meta.getBoundingClientRect().height,
+      copyRect: JSON.stringify(document.getElementById('copy').getBoundingClientRect()),
+      rerunRect: JSON.stringify(document.getElementById('rerun').getBoundingClientRect()),
+      copyScrollW: document.getElementById('copy').scrollWidth,
+      copyClientW: document.getElementById('copy').clientWidth,
+      rerunScrollW: document.getElementById('rerun').scrollWidth,
+      rerunClientW: document.getElementById('rerun').clientWidth,
+      row5: (()=>{const r=list.querySelectorAll('.row')[4]; const b=r.getBoundingClientRect(); return {h:b.height,w:b.width, sw:r.scrollWidth, cw:r.clientWidth};})(),
+      row7: (()=>{const r=list.querySelectorAll('.row')[6]; const b=r.getBoundingClientRect(); return {h:b.height,w:b.width, sw:r.scrollWidth, cw:r.clientWidth};})(),
+      qRect5: (()=>{const r=list.querySelectorAll('.row')[4].querySelector('.q').getBoundingClientRect(); return {t:r.top,h:r.height};})(),
+      aRect5: (()=>{const r=list.querySelectorAll('.row')[4].querySelector('.a').getBoundingClientRect(); return {t:r.top,h:r.height,w:r.width};})(),
     };
   });
   console.log(scheme, JSON.stringify(m, null, 1));

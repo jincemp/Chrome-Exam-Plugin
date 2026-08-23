@@ -138,12 +138,21 @@ body {
 
 .foot {
   display: flex;
-  align-items: center;
+  align-items: baseline;
   justify-content: space-between;
-  gap: 8px;
+  gap: 10px;
   margin-top: 9px;
   padding-top: 8px;
   border-top: 1px solid var(--line);
 }
-.foot-actions { display: flex; gap: 12px; }
-.meta { color: var(--muted); font-size: 11px; }
+
+/* The actions keep their width; the meta line is what gives way. */
+.foot-actions { display: flex; flex: none; gap: 12px; white-space: nowrap; }
+
+.meta {
+  flex: 1;
+  min-width: 0;
+  color: var(--muted);
+  font-size: 11px;
+  line-height: 1.35;
+}
