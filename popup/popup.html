@@ -14,7 +14,7 @@
         <button id="open-options" class="cta">Open settings</button>
       </section>
 
-      <section id="panel-idle" class="panel" hidden>
+      <section id="panel-idle" class="panel">
         <button id="get-answers" class="cta">Get answers</button>
         <p id="idle-note" class="note"></p>
       </section>
@@ -27,8 +27,9 @@
         <button id="cancel" class="link-btn">Cancel</button>
       </section>
 
-      <section id="panel-answers" class="panel" hidden>
+      <section id="panel-answers" class="panel" role="status" tabindex="-1" hidden>
         <ol id="answers" class="answers" aria-label="Answers"></ol>
+        <p id="answers-partial" class="partial" hidden></p>
         <footer class="foot">
           <span id="answers-meta" class="meta"></span>
           <span class="foot-actions">
@@ -38,7 +39,7 @@
         </footer>
       </section>
 
-      <section id="panel-error" class="panel" hidden>
+      <section id="panel-error" class="panel" role="alert" tabindex="-1" hidden>
         <p id="error-message" class="error"></p>
         <p id="error-hint" class="note" hidden></p>
         <button id="grant" class="cta" hidden>Allow and retry</button>

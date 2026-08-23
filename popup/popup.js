@@ -20,7 +20,12 @@ let tab = null;
 let settings = null;
 
 function show(name) {
+  const changed = panels[name].hidden;
   for (const [key, el] of Object.entries(panels)) el.hidden = key !== name;
+
+  // Hiding the panel that held focus drops the user on <body>. Move focus with
+  // the state instead, so the result is reachable and gets announced.
+  if (changed && name !== 'idle') panels[name].focus?.();
 }
 
 /* ------------------------------------------------------------------ render */
@@ -70,12 +75,20 @@ function renderAnswers(job) {
     if (interactive) {
       row.classList.add('has-why');
       row.title = 'Show reasoning';
+
       const p = document.createElement('p');
       p.className = 'why';
+      p.id = `why-${String(a.number ?? '').replace(/\W/g, '') || list.children.length}`;
       p.textContent = why;
       p.hidden = true;
       li.append(p);
-      row.addEventListener('click', () => { p.hidden = !p.hidden; });
+
+      row.setAttribute('aria-expanded', 'false');
+      row.setAttribute('aria-controls', p.id);
+      row.addEventListener('click', () => {
+        p.hidden = !p.hidden;
+        row.setAttribute('aria-expanded', String(!p.hidden));
+      });
     }
 
     list.append(li);
@@ -92,14 +105,12 @@ function renderAnswers(job) {
   if (job.meta?.model) meta.push(job.meta.model);
   $('answers-meta').textContent = meta.join(' · ');
 
-  // A partial run must say what went wrong, not just that something did.
+  // A partial run must say what went wrong, not just that something did - and it
+  // must say it outside the list, which scrolls away past a few answers.
   const partial = job.meta?.partialError;
-  if (partial?.message) {
-    const li = document.createElement('li');
-    li.className = 'why partial';
-    li.textContent = [partial.message, partial.hint].filter(Boolean).join(' ');
-    list.append(li);
-  }
+  const note = $('answers-partial');
+  note.textContent = partial?.message ? [partial.message, partial.hint].filter(Boolean).join(' ') : '';
+  note.hidden = !note.textContent;
 
   show('answers');
 }
@@ -117,8 +128,12 @@ function renderError(job) {
   const grant = $('grant');
   grant.hidden = pendingOrigins.length === 0;
   if (pendingOrigins.length) {
-    const hosts = pendingOrigins.map((o) => new URL(o).host).join(', ');
-    grant.textContent = `Allow ${hosts}`;
+    const hosts = pendingOrigins.map((o) => { try { return new URL(o).host; } catch { return o; } });
+    grant.textContent = hosts.length === 1 ? `Allow ${hosts[0]}` : `Allow ${hosts.length} sites`;
+    if (hosts.length > 1) {
+      hint.textContent = hosts.join(', ');
+      hint.hidden = false;
+    }
   }
 
   show('error');
@@ -238,14 +253,20 @@ async function currentJob() {
 }
 
 chrome.storage.onChanged.addListener((changes, area) => {
-  if (area !== 'session' || !tab) return;
+  if (area !== 'session' || !tab || !settings) return;
   const change = changes[jobKey(tab.id)];
   if (change) render(change.newValue || null);
 });
 
 (async function init() {
-  [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
-  settings = await getSettings();
+  // Both at once: a progress write landing between two awaits would otherwise
+  // reach the storage listener with one of them still unset.
+  const [tabs, loaded] = await Promise.all([
+    chrome.tabs.query({ active: true, currentWindow: true }),
+    getSettings(),
+  ]);
+  [tab] = tabs;
+  settings = loaded;
 
   if (!tab) return show('setup');
   if (!settings.apiKey) return show('setup');

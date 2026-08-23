@@ -138,14 +138,16 @@ $('test').addEventListener('click', async () => {
   }
 });
 
-// Do not lose a half-filled form. Two things are deliberately left out of this
-// autosave: the base URL, because a permission prompt needs a click; and an
-// empty API key, which would otherwise erase a stored one.
+// Do not lose a half-filled form. Two fields are deliberately left out: the base
+// URL, because granting it needs a click; and the API key, because closing the
+// tab is how people discard a half-pasted one - autosaving it would replace a
+// working key with an unusable fragment. Both require Save.
 window.addEventListener('beforeunload', () => {
   if (!loaded) return; // the form has not been populated yet - it is all blanks
   const { baseUrl, apiKey, ...rest } = readForm();
   void baseUrl;
-  setSettings(apiKey ? { ...rest, apiKey } : rest);
+  void apiKey;
+  setSettings(rest);
 });
 
 /** Guards the autosave: closing the tab before load() finishes must be a no-op. */

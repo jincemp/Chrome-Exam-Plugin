@@ -1,4 +1,5 @@
 :root {
+  color-scheme: light dark;
   --bg: #ffffff;
   --fg: #14161a;
   --muted: #6b7280;
@@ -36,6 +37,7 @@ body {
 .app { padding: 12px; }
 .panel { display: block; }
 .panel[hidden] { display: none; }
+.panel:focus { outline: none; }
 
 .lead { margin: 2px 0 10px; color: var(--muted); }
 
@@ -53,8 +55,14 @@ body {
 .cta:hover { filter: brightness(1.07); }
 .cta:active { filter: brightness(0.95); }
 .cta:disabled { opacity: 0.6; cursor: default; }
+.cta { overflow-wrap: anywhere; }
 
-.note { margin: 8px 2px 0; color: var(--muted); font-size: 12px; }
+.note {
+  margin: 8px 2px 0;
+  min-height: 17px; /* reserved, so filling in the count does not resize the popup */
+  color: var(--muted);
+  font-size: 12px;
+}
 
 #grant { margin: 12px 0 10px; }
 .error { margin: 2px 2px 8px; color: var(--danger); }
@@ -128,11 +136,13 @@ body {
 .why[hidden] { display: none; }
 
 .partial {
-  margin-top: 8px;
+  margin: 8px 2px 0;
   padding-top: 8px;
   border-top: 1px solid var(--line);
   color: var(--danger);
+  font-size: 12px;
 }
+.partial[hidden] { display: none; }
 
 /* footer ----------------------------------------------------------------- */
 
