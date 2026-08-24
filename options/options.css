@@ -58,6 +58,9 @@ textarea { display: block; resize: vertical; }
 .key-row { display: flex; gap: 8px; }
 .key-row input { flex: 1; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
 
+#model-custom { margin-top: 8px; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
+#model-custom[hidden] { display: none; }
+
 .hint { display: block; margin-top: 6px; color: var(--muted); font-size: 12px; }
 .hint a { color: var(--accent); }
 .hint code { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 11px; }

@@ -588,6 +588,63 @@ try {
     assert.equal(shown.model, 'gpt-5.6-luna');
   });
 
+  /* ------------------------------------------------ choosing a different model */
+
+  const chooser = await context.newPage();
+  await chooser.goto(`chrome-extension://${extensionId}/options/options.html`);
+  await chooser.waitForFunction(() => document.getElementById('model').options.length > 1, { timeout: 10000 });
+
+  const options = await chooser.$$eval('#model option', (els) => els.map((e) => e.value));
+
+  check('the model list offers more than the one already selected', () => {
+    // A datalist filters its suggestions against the typed value, so a
+    // pre-filled box only ever offered the current model back.
+    assert.ok(options.length > 2, `only offered: ${options.join(', ')}`);
+    assert.ok(options.includes('gpt-5.6-luna'), 'the account list must not drop the current model');
+    assert.equal(options.at(-1), '__custom__', 'a custom id must stay reachable');
+  });
+
+  const selected = await chooser.$eval('#model', (el) => el.value);
+  check('the stored model is the one selected on open', () => {
+    assert.equal(selected, 'gpt-5.6-luna');
+  });
+
+  // Pick a different one and save it the way a person would.
+  await chooser.selectOption('#model', 'gpt-5.6-sol');
+  await chooser.click('#save');
+  await chooser.waitForFunction(() => document.getElementById('status').textContent.includes('Saved'), { timeout: 5000 });
+  const afterPick = await chooser.evaluate(() => chrome.storage.local.get('model'));
+
+  check('picking a model from the list saves it', () => {
+    assert.equal(afterPick.model, 'gpt-5.6-sol');
+  });
+
+  // And the free-text escape hatch for a proxy's own model id.
+  await chooser.selectOption('#model', '__custom__');
+  await chooser.fill('#model-custom', 'my-proxy/llama-70b');
+  await chooser.click('#save');
+  await chooser.waitForTimeout(300);
+  const afterCustom = await chooser.evaluate(() => chrome.storage.local.get('model'));
+
+  check('a custom model id can still be typed in', () => {
+    assert.equal(afterCustom.model, 'my-proxy/llama-70b');
+  });
+
+  await chooser.reload();
+  await chooser.waitForFunction(() => document.getElementById('model').options.length > 1, { timeout: 10000 });
+  const keptCustom = await chooser.evaluate(() => ({
+    value: document.getElementById('model').value,
+    custom: document.getElementById('model-custom').value,
+  }));
+
+  check('a custom model survives reopening the settings page', () => {
+    assert.equal(keptCustom.value, 'my-proxy/llama-70b', 'it should be listed, not lost');
+  });
+
+  // Put it back so the later scenarios start from a known state.
+  await chooser.evaluate(() => chrome.storage.local.set({ model: 'gpt-5.6-luna', effort: 'medium' }));
+  await chooser.close();
+
   /* ------------------------------- upgrading an install that predates a default */
 
   // By now the client has learned this base URL from the chat-only scenario and

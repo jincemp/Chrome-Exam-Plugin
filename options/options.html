@@ -27,11 +27,13 @@
 
         <label class="field">
           <span class="label">Model</span>
-          <input id="model" list="models" spellcheck="false" placeholder="gpt-5.6-luna" />
-          <datalist id="models"></datalist>
+          <select id="model"></select>
+          <input id="model-custom" spellcheck="false" placeholder="model id, e.g. gpt-5.6-terra" hidden />
           <span class="hint" id="model-hint">
             The default is a good balance. If answers are wrong, raise <b>Thinking</b>
             before reaching for a pricier model — it is usually the cheaper fix.
+            Add your key and press <b>Test key</b> to fill this list with the
+            models your own account can use.
           </span>
         </label>
 

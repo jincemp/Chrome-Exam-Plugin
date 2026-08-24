@@ -13,20 +13,53 @@ const setStatus = (text, kind) => {
   el.className = `status${kind ? ` ${kind}` : ''}`;
 };
 
-const fillModels = (ids) => {
-  const list = $('models');
-  list.replaceChildren();
-  for (const id of ids) {
+/** Marker option that reveals the free-text box, for proxies and new IDs. */
+const CUSTOM = '__custom__';
+
+/**
+ * Fill the dropdown, keeping `selected` in it even when the account's list does
+ * not mention it - otherwise choosing a proxy model would silently reset.
+ */
+const fillModels = (ids, selected) => {
+  const select = $('model');
+  const chosen = selected ?? currentModel();
+  const known = [...new Set([...ids, chosen].filter(Boolean))];
+
+  select.replaceChildren();
+  for (const id of known) {
     const opt = document.createElement('option');
     opt.value = id;
-    list.append(opt);
+    opt.textContent = id === DEFAULT_SETTINGS.model ? `${id} — recommended` : id;
+    select.append(opt);
   }
+
+  const other = document.createElement('option');
+  other.value = CUSTOM;
+  other.textContent = 'Other — type a model ID…';
+  select.append(other);
+
+  select.value = chosen && known.includes(chosen) ? chosen : CUSTOM;
+  syncCustom();
 };
+
+/** The model the form is currently describing, wherever it is being entered. */
+function currentModel() {
+  const select = $('model');
+  if (!select.options.length) return '';
+  return select.value === CUSTOM ? $('model-custom').value.trim() : select.value;
+}
+
+/** Show the free-text box only when "Other" is picked. */
+function syncCustom() {
+  const custom = $('model').value === CUSTOM;
+  $('model-custom').hidden = !custom;
+  if (custom) $('model-custom').focus();
+}
 
 function readForm() {
   return {
     apiKey: $('apiKey').value.trim(),
-    model: $('model').value.trim() || DEFAULT_SETTINGS.model,
+    model: currentModel() || DEFAULT_SETTINGS.model,
     effort: $('effort').value,
     endpoint: $('endpoint').value,
     baseUrl: ($('baseUrl').value.trim() || DEFAULT_SETTINGS.baseUrl).replace(/\/+$/, ''),
@@ -49,13 +82,13 @@ async function load() {
   const s = await getSettings();
   showVersion(s);
   $('apiKey').value = s.apiKey;
-  $('model').value = s.model;
+  $('model-custom').value = s.model;
+  fillModels(SUGGESTED_MODELS, s.model);
   $('effort').value = s.effort;
   $('endpoint').value = s.endpoint;
   $('baseUrl').value = s.baseUrl;
   $('showWhy').checked = s.showWhy;
   $('extraInstructions').value = s.extraInstructions;
-  fillModels(SUGGESTED_MODELS);
   if (s.apiKey) refreshModels(s).catch(() => {});
 }
 
@@ -66,7 +99,7 @@ async function refreshModels(settings) {
     .filter((id) => /^(gpt|o\d|chatgpt)/.test(id))
     .filter((id) => !/(embedding|whisper|tts|audio|realtime|image|dall-e|moderation|transcribe|search|codex)/.test(id))
     .sort();
-  if (chat.length) fillModels(chat);
+  if (chat.length) fillModels(chat, currentModel());
   return chat;
 }
 
@@ -76,7 +109,8 @@ $('reset').addEventListener('click', async () => {
   const { apiKey } = readForm();
   const fresh = { ...DEFAULT_SETTINGS, apiKey };
   await setSettings(fresh);
-  $('model').value = fresh.model;
+  $('model-custom').value = fresh.model;
+  fillModels(SUGGESTED_MODELS, fresh.model);
   $('effort').value = fresh.effort;
   $('endpoint').value = fresh.endpoint;
   $('baseUrl').value = fresh.baseUrl;
@@ -85,6 +119,8 @@ $('reset').addEventListener('click', async () => {
   showVersion(fresh);
   setStatus(`Reset. Model is now ${fresh.model}.`, 'ok');
 });
+
+$('model').addEventListener('change', syncCustom);
 
 $('reveal').addEventListener('click', () => {
   const input = $('apiKey');

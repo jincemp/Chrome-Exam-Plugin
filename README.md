@@ -202,7 +202,7 @@ everything the current version ships with and keeps your API key.
 | Setting | What it does |
 | --- | --- |
 | **API key** | Your OpenAI key. Stored in this browser only. |
-| **Model** | Which model answers. The list is populated from your own account. |
+| **Model** | Which model answers. Add your key and press **Test key** to fill the list with the models your account can actually use. Pick *Other* to type an ID by hand. |
 | **Reset to defaults** | Puts back everything this version ships with, keeping your API key. |
 | **Thinking** | How much working the model does before it answers. Raise it when a paper keeps coming back wrong; lower it for speed. See [Cost](#cost). |
 | **Extra instructions** | Sent with every request. Good for naming a code edition or syllabus, e.g. *"Answers should follow the 2023 NEC."* |
