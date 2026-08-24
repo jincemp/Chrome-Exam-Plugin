@@ -37,7 +37,27 @@ console.log({
   frameOrigins: result.frameOrigins,
   chars: result.text.length,
   lines: result.text.split('\n').length,
+  images: result.images.length,
 });
+
+if (result.images.length) {
+  console.log('\n=== IMAGES ===');
+  for (const img of result.images) {
+    const size = img.kind === 'dataUrl' ? `${Math.round(img.value.length / 1024)}KB base64` : img.value;
+    console.log(`  [[IMG:${img.id}]] ${img.kind}${img.alt ? ` alt="${img.alt}"` : ''} - ${size}`);
+  }
+  const dumpDir = process.env.DUMP_IMAGES;
+  if (dumpDir) {
+    const fs = await import('node:fs');
+    fs.mkdirSync(dumpDir, { recursive: true });
+    for (const img of result.images) {
+      if (img.kind !== 'dataUrl') continue;
+      const base64 = img.value.replace(/^data:image\/\w+;base64,/, '');
+      fs.writeFileSync(`${dumpDir}/img-${img.id}.png`, Buffer.from(base64, 'base64'));
+    }
+    console.log(`\n(dumped PNGs to ${dumpDir})`);
+  }
+}
 console.log('\n=== HINTS ===');
 console.log(result.hints || '(none)');
 console.log('\n=== TEXT ===');

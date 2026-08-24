@@ -10,7 +10,9 @@ Q3: 4.7 kΩ
 ```
 
 Multiple-choice questions show the option letter and its text. Questions without
-options show just the answer.
+options show just the answer. A question that is a diagram, chart, or photo —
+instead of or alongside its text — is sent to the model as an image, so it
+still gets answered.
 
 ---
 
@@ -110,6 +112,15 @@ checking. A `?` after an answer means the model was unsure. If the footer says *
 loaded*, the page only had some of its questions in the DOM when it was read —
 scroll to the bottom and press **Re-run**.
 
+**Diagrams and images.** If a question shows a graph, circuit diagram, or
+photo — with or without accompanying text — it is captured from the page and
+sent to the model along with the surrounding question text, so questions that
+are entirely a picture still get answered. This needs no extra setup or
+permissions: same-origin images are read directly off the page, and one hosted
+elsewhere is passed to OpenAI as a link for it to fetch. If a model does not
+support images, the extension notices and retries with the image left out,
+falling back to any text description the page provides for it.
+
 Answers are kept until you reload the page, navigate that tab elsewhere, or
 quit Chrome. Nothing is written to disk except your settings.
 
@@ -136,6 +147,10 @@ one for a much smaller gain. A pricier model is rarely the cheaper fix.
 These are estimates, not a quote. Reasoning is billed as output and varies a
 lot per question — treat anything above Medium as unpredictable within a factor
 of two, and set a monthly cap on your OpenAI account.
+
+A page with diagrams costs more: each image is billed as input tokens on top
+of the page text, roughly a fraction of a cent apiece at the resolution this
+extension sends.
 
 ## Share it with a friend
 
@@ -212,8 +227,8 @@ everything the current version ships with and keeps your API key.
 
 ## Privacy
 
-- The page text goes to OpenAI and nowhere else. There is no server in between
-  and no analytics of any kind.
+- The page text, and any diagrams captured from it, go to OpenAI and nowhere
+  else. There is no server in between and no analytics of any kind.
 - Requests are sent with `store: false`, so OpenAI is asked not to retain them.
 - Your API key lives in `chrome.storage.local`, readable only by this extension.
   It is not synced to your Google account.
@@ -229,8 +244,10 @@ Chrome Web Store, and other extensions' pages. It also blocks local `file://`
 pages until you tick *Allow access to file URLs* on the extension's card in
 `chrome://extensions`.
 
-**"No readable text on this page."** The questions are probably an image, a PDF,
-or drawn on a `<canvas>`. Nothing to extract.
+**"No readable text on this page."** The page is probably a PDF opened in
+Chrome's built-in viewer, which has no text or images an extension can read.
+Diagrams and photos embedded in a normal web page are read fine — this only
+comes up when there is nothing on the page at all.
 
 **"The questions are inside an embedded frame."** The quiz is served from
 another site inside an iframe, and `activeTab` only covers the page you are
@@ -270,7 +287,7 @@ popup does not cancel it.
 | Path | |
 | --- | --- |
 | `manifest.json` | Permissions and entry points |
-| `src/extract.js` | Injected into the page; turns the DOM into readable text |
+| `src/extract.js` | Injected into the page; turns the DOM into readable text and captures diagrams as images |
 | `src/background.js` | Orchestration, chunking, badges, per-tab state |
 | `src/openai.js` | API client: retries, endpoint fallback, error mapping |
 | `src/prompt.js` | Instructions and the JSON schema for answers |
@@ -308,6 +325,8 @@ a real browser so hidden elements are genuinely hidden.
 ## Limitations
 
 The model can be confidently wrong, especially on questions that depend on a
-specific code edition, a diagram, or material that is not on the page. Answers
-marked with a `?` are ones the model was unsure about. Treat the output as a
-study aid to check yourself against, not as a verified answer key.
+specific code edition or material that is not on the page. Diagrams are sent
+to the model as images, but it can still misread one — a cramped schematic or
+a low-contrast scan is harder for it than for a person. Answers marked with a
+`?` are ones the model was unsure about. Treat the output as a study aid to
+check yourself against, not as a verified answer key.

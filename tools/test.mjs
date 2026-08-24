@@ -18,9 +18,9 @@ const root = path.dirname(path.dirname(fileURLToPath(import.meta.url)));
 let passed = 0;
 const failures = [];
 
-function test(name, fn) {
+async function test(name, fn) {
   try {
-    fn();
+    await fn();
     passed++;
   } catch (err) {
     failures.push([name, err]);
@@ -43,7 +43,7 @@ globalThis.chrome = {
 
 const { chunkText, mergeAnswers } = await import('../src/background.js');
 const { parseQuestions, relaxCaps, parseResponsesPayload, parseChatPayload, classifyError, TruncatedError,
-        buildResponsesBody, buildChatBody, initialCaps } = await import('../src/openai.js');
+        buildResponsesBody, buildChatBody, initialCaps, buildContentParts } = await import('../src/openai.js');
 const { formatAnswer, formatAll, sortAnswers } = await import('../src/format.js');
 const { ANSWER_SCHEMA, buildPrompt } = await import('../src/prompt.js');
 const { DEFAULT_SETTINGS, isInsecureBase, migrate, pageKey } = await import('../src/storage.js');
@@ -55,7 +55,7 @@ const EXTRACT_SRC = readFileSync(path.join(root, 'src/extract.js'), 'utf8');
 // linkedom has no layout engine, so getComputedStyle is unavailable and the
 // extractor's visibility checks fall back to tag names and attributes. Cases
 // that turn on computed style (display:none, white-space) belong in tools/e2e.mjs.
-function extract(html, { selection = '', url = 'https://example.test/quiz' } = {}) {
+async function extract(html, { selection = '', url = 'https://example.test/quiz' } = {}) {
   const { window, document } = parseHTML(`<!doctype html><html><body>${html}</body></html>`);
   window.top = window;
   window.getSelection = () => selection;
@@ -66,7 +66,7 @@ function extract(html, { selection = '', url = 'https://example.test/quiz' } = {
   globalThis.location = { href: url, origin: new URL(url).origin };
   globalThis.Node = window.Node || { TEXT_NODE: 3, ELEMENT_NODE: 1 };
   try {
-    return (0, eval)(EXTRACT_SRC);
+    return await (0, eval)(EXTRACT_SRC);
   } finally {
     Object.assign(globalThis, saved);
   }
@@ -102,20 +102,20 @@ const QUIZ = `
   <footer><p>Copyright 2026 Example</p></footer>
 `;
 
-test('extract: returns page text', () => {
-  const r = extract(QUIZ);
+await test('extract: returns page text', async () => {
+  const r = (await extract(QUIZ));
   assert.equal(r.ok, true);
   assert.match(r.text, /maximum voltage drop/);
 });
 
-test('extract: drops nav, header and footer boilerplate', () => {
-  const r = extract(QUIZ);
+await test('extract: drops nav, header and footer boilerplate', async () => {
+  const r = (await extract(QUIZ));
   assert.doesNotMatch(r.text, /Courses/);
   assert.doesNotMatch(r.text, /Copyright 2026/);
 });
 
-test('extract: each question and option lands on its own line', () => {
-  const lines = extract(QUIZ).text.split('\n').map((l) => l.trim()).filter(Boolean);
+await test('extract: each question and option lands on its own line', async () => {
+  const lines = (await extract(QUIZ)).text.split('\n').map((l) => l.trim()).filter(Boolean);
   assert.ok(lines.some((l) => l.startsWith('1. What is the maximum')), lines.join(' | '));
   assert.ok(lines.some((l) => l.includes('a) 1%')));
   assert.ok(lines.some((l) => l.includes('c) 5%')));
@@ -123,109 +123,109 @@ test('extract: each question and option lands on its own line', () => {
   assert.ok(!lines.some((l) => /a\) 1%.*b\) 3%/.test(l)), lines.join(' | '));
 });
 
-test('extract: marks a pre-selected radio', () => {
-  assert.match(extract(QUIZ).text, /\[selected\] b\) 3%/);
+await test('extract: marks a pre-selected radio', async () => {
+  assert.match((await extract(QUIZ)).text, /\[selected\] b\) 3%/);
 });
 
-test('extract: counts numbered questions', () => {
-  assert.equal(extract(QUIZ).questionCount, 3);
+await test('extract: counts numbered questions', async () => {
+  assert.equal((await extract(QUIZ)).questionCount, 3);
 });
 
-test('extract: numbered prose headings are not questions', () => {
+await test('extract: numbered prose headings are not questions', async () => {
   const article = `<main>
     <h2>1. Introduction</h2><p>Grounding matters.</p>
     <h2>2. Bonding</h2><p>So does bonding.</p>
     <h2>3. Conclusion</h2><p>The end.</p>
   </main>`;
-  assert.equal(extract(article).questionCount, 0);
+  assert.equal((await extract(article)).questionCount, 0);
 });
 
-test('extract: numeric option labels do not inflate the count', () => {
+await test('extract: numeric option labels do not inflate the count', async () => {
   const page = `<main>
     <p>1. Which voltage is correct?</p>
     <p>1) 120 V</p><p>2) 208 V</p><p>3) 240 V</p><p>4) 480 V</p>
   </main>`;
-  assert.equal(extract(page).questionCount, 1);
+  assert.equal((await extract(page)).questionCount, 1);
 });
 
-test('extract: unnumbered options are still counted structurally', () => {
+await test('extract: unnumbered options are still counted structurally', async () => {
   const forms = `<main>
     <div role="radiogroup"><div role="radio">Yes</div><div role="radio">No</div></div>
     <div role="radiogroup"><div role="radio">True</div><div role="radio">False</div></div>
   </main>`;
-  assert.equal(extract(forms).questionCount, 2);
+  assert.equal((await extract(forms)).questionCount, 2);
 });
 
-test('extract: an aria-checked option is marked selected', () => {
-  const r = extract('<main><div role="radiogroup"><div role="radio" aria-checked="true">Yes</div><div role="radio">No</div></div></main>');
+await test('extract: an aria-checked option is marked selected', async () => {
+  const r = (await extract('<main><div role="radiogroup"><div role="radio" aria-checked="true">Yes</div><div role="radio">No</div></div></main>'));
   assert.match(r.text, /\[selected\] Yes/);
 });
 
-test('extract: screen-reader-only text is left out', () => {
-  const r = extract('<main><span class="sr-only">Skip to content</span><p>1. A real question?</p></main>');
+await test('extract: screen-reader-only text is left out', async () => {
+  const r = (await extract('<main><span class="sr-only">Skip to content</span><p>1. A real question?</p></main>'));
   assert.doesNotMatch(r.text, /Skip to content/);
 });
 
-test('extract: nested question containers are counted once', () => {
+await test('extract: nested question containers are counted once', async () => {
   const nested = `<main>
     <div class="question-wrapper"><div class="question"><p>Pick one</p>
       <input type="radio" name="q1"><input type="radio" name="q1"></div></div>
     <div class="question-wrapper"><div class="question"><p>Pick one</p>
       <input type="radio" name="q2"><input type="radio" name="q2"></div></div>
   </main>`;
-  assert.equal(extract(nested).questionCount, 2);
+  assert.equal((await extract(nested)).questionCount, 2);
 });
 
-test('extract: picks up a data-answer attribute as a hint', () => {
-  assert.match(extract(QUIZ).hints, /\bc\b/);
+await test('extract: picks up a data-answer attribute as a hint', async () => {
+  assert.match((await extract(QUIZ)).hints, /\bc\b/);
 });
 
-test('extract: every hint says which question it belongs to', () => {
+await test('extract: every hint says which question it belongs to', async () => {
   const page = `<main>
     <div class="question" data-answer="c"><p>1. First question?</p></div>
     <div class="question" data-answer="a"><p>2. Second question?</p></div>
     <div class="question" data-answer="c"><p>3. Third question?</p></div>
   </main>`;
-  const lines = extract(page).hints.split('\n').filter(Boolean);
+  const lines = (await extract(page)).hints.split('\n').filter(Boolean);
   assert.deepEqual(lines, ['Q1 -> c', 'Q2 -> a', 'Q3 -> c'], 'a bare list of letters would de-duplicate into a misaligned key');
 });
 
-test('extract: site and API keys are never collected as hints', () => {
+await test('extract: site and API keys are never collected as hints', async () => {
   const page = `<main>
     <div data-site-key="6LeIxAcTAAAAAJcZVRqyHh71UMIEGNQ_MXjiZKhI"></div>
     <div data-api-key="sk-proj-abc123def456ghi789jkl012mno345pqr678"></div>
     <div data-session-key="9f8e7d6c5b4a39281706f5e4d3c2b1a0"></div>
     <p>1. A question?</p>
   </main>`;
-  const { hints } = extract(page);
+  const { hints } = (await extract(page));
   assert.doesNotMatch(hints, /6LeIxAcT/);
   assert.doesNotMatch(hints, /sk-proj/);
   assert.doesNotMatch(hints, /9f8e7d6c/);
 });
 
-test('extract: a preformatted block keeps its line structure', () => {
+await test('extract: a preformatted block keeps its line structure', async () => {
   const page = `<main><pre>1. What is the maximum voltage drop?
 a) 1%
 b) 3%
 c) 5%</pre></main>`;
-  const lines = extract(page).text.split('\n').map((l) => l.trim()).filter(Boolean);
+  const lines = (await extract(page)).text.split('\n').map((l) => l.trim()).filter(Boolean);
   assert.ok(lines.includes('a) 1%'), lines.join(' // '));
   assert.ok(lines.includes('b) 3%'), lines.join(' // '));
 });
 
-test('extract: a question stem inside a nested header survives', () => {
+await test('extract: a question stem inside a nested header survives', async () => {
   const page = `<body><header><h1>Exam site</h1></header><main>
     <div class="question">
       <header><h3>1. Which conductor is grounded?</h3></header>
       <ul><li>a) the hot</li><li>b) the neutral</li></ul>
     </div>
   </main><footer>Copyright</footer></body>`;
-  const r = extract(page);
+  const r = (await extract(page));
   assert.match(r.text, /Which conductor is grounded/);
   assert.doesNotMatch(r.text, /Exam site/);
 });
 
-test('extract: a long answer dropdown keeps all of its options', () => {
+await test('extract: a long answer dropdown keeps all of its options', async () => {
   const options = [
     'The neutral conductor carries the unbalanced current between the phase conductors.',
     'The equipment grounding conductor carries the unbalanced current at all times.',
@@ -234,96 +234,96 @@ test('extract: a long answer dropdown keeps all of its options', () => {
     'Both the neutral and the equipment grounding conductor share the unbalanced current.',
   ];
   const page = `<main><p>1. Which statement is correct?</p><select>${options.map((o) => `<option>${o}</option>`).join('')}</select></main>`;
-  const { text } = extract(page);
+  const { text } = (await extract(page));
   for (const o of options) assert.match(text, new RegExp(o.slice(0, 30).replace(/[.*+?^${}()|[\]\\]/g, '\\$&')));
 });
 
-test('extract: an unchosen dropdown is not reported as selected', () => {
+await test('extract: an unchosen dropdown is not reported as selected', async () => {
   const page = '<main><p>1. Pick one</p><select><option>Alpha</option><option>Beta</option></select></main>';
-  assert.doesNotMatch(extract(page).text, /\[selected\]/);
+  assert.doesNotMatch((await extract(page)).text, /\[selected\]/);
 });
 
-test('extract: a selection wins over the page', () => {
-  const r = extract(QUIZ, { selection: '7. Which conductor is grounded?\na) the hot\nb) the neutral' });
+await test('extract: a selection wins over the page', async () => {
+  const r = (await extract(QUIZ, { selection: '7. Which conductor is grounded?\na) the hot\nb) the neutral' }));
   assert.match(r.selection, /Which conductor is grounded/);
   assert.equal(r.questionCount, 1);
 });
 
-test('extract: ignores a selection too short to be a question', () => {
-  assert.equal(extract(QUIZ, { selection: 'voltage' }).selection, '');
+await test('extract: ignores a selection too short to be a question', async () => {
+  assert.equal((await extract(QUIZ, { selection: 'voltage' })).selection, '');
 });
 
-test('extract: script and style content never appears', () => {
-  const r = extract('<main><p>1. Real question?</p><script>var answer="b";</script><style>.x{color:red}</style></main>');
+await test('extract: script and style content never appears', async () => {
+  const r = (await extract('<main><p>1. Real question?</p><script>var answer="b";</script><style>.x{color:red}</style></main>'));
   assert.doesNotMatch(r.text, /var answer/);
   assert.doesNotMatch(r.text, /color:red/);
 });
 
-test('extract: a table row stays on one line with its cells separated', () => {
-  const r = extract('<main><table><tr><td>1.</td><td>What is 2+2?</td></tr><tr><td>2.</td><td>And 3+3?</td></tr></table></main>');
+await test('extract: a table row stays on one line with its cells separated', async () => {
+  const r = (await extract('<main><table><tr><td>1.</td><td>What is 2+2?</td></tr><tr><td>2.</td><td>And 3+3?</td></tr></table></main>'));
   const lines = r.text.split('\n').map((l) => l.trim()).filter(Boolean);
   assert.ok(lines.some((l) => /1\..*\|.*What is 2\+2\?/.test(l)), lines.join(' // '));
   assert.ok(lines.some((l) => /2\..*\|.*And 3\+3\?/.test(l)), lines.join(' // '));
 });
 
-test('extract: a page of question blocks is not reduced to the first one', () => {
+await test('extract: a page of question blocks is not reduced to the first one', async () => {
   const page = `<div id="page"><div class="header">Site</div>
     <div class="question"><p>1. ${'Long question text about grounding electrodes. '.repeat(8)}</p></div>
     <div class="question"><p>2. ${'Long question text about bonding jumpers. '.repeat(8)}</p></div>
     <div class="question"><p>3. ${'Long question text about raceway fill. '.repeat(8)}</p></div>
   </div>`;
-  const r = extract(page);
+  const r = (await extract(page));
   assert.match(r.text, /1\. Long question text about grounding/);
   assert.match(r.text, /2\. Long question text about bonding/);
   assert.match(r.text, /3\. Long question text about raceway/);
 });
 
-test('extract: short selects contribute their options', () => {
-  const r = extract('<main><p>1. Pick one</p><select><option>Alpha</option><option>Beta</option></select></main>');
+await test('extract: short selects contribute their options', async () => {
+  const r = (await extract('<main><p>1. Pick one</p><select><option>Alpha</option><option>Beta</option></select></main>'));
   assert.match(r.text, /Alpha/);
   assert.match(r.text, /Beta/);
 });
 
-test('extract: falls back to the body when there is no main landmark', () => {
-  const r = extract('<div><p>1. Body only question?</p><p>a) yes</p><p>b) no</p></div>');
+await test('extract: falls back to the body when there is no main landmark', async () => {
+  const r = (await extract('<div><p>1. Body only question?</p><p>a) yes</p><p>b) no</p></div>'));
   assert.match(r.text, /Body only question/);
 });
 
-test('extract: an about:blank iframe does not hide the real one', () => {
+await test('extract: an about:blank iframe does not hide the real one', async () => {
   const page = `<main><p>Loading...</p>
     <iframe src="about:blank"></iframe>
     <iframe src="https://quiz.example.com/embed/42"></iframe>
   </main>`;
-  assert.deepEqual(extract(page).frameOrigins, ['https://quiz.example.com']);
+  assert.deepEqual((await extract(page)).frameOrigins, ['https://quiz.example.com']);
 });
 
-test('extract: same-origin and non-http frames are not reported', () => {
+await test('extract: same-origin and non-http frames are not reported', async () => {
   const page = `<main>
     <iframe src="/local/embed"></iframe>
     <iframe src="javascript:false"></iframe>
     <iframe src="data:text/html,hi"></iframe>
   </main>`;
-  assert.deepEqual(extract(page).frameOrigins, []);
+  assert.deepEqual((await extract(page)).frameOrigins, []);
 });
 
-test('extract: image alt text is kept', () => {
-  const r = extract('<main><p>1. Identify this symbol</p><img alt="wye transformer" src="x.png"></main>');
+await test('extract: image alt text is kept', async () => {
+  const r = (await extract('<main><p>1. Identify this symbol</p><img alt="wye transformer" src="x.png"></main>'));
   assert.match(r.text, /wye transformer/);
 });
 
-test('extract: reports truncation only when it happens', () => {
-  assert.equal(extract(QUIZ).truncated, false);
+await test('extract: reports truncation only when it happens', async () => {
+  assert.equal((await extract(QUIZ)).truncated, false);
   const long = `<main>${'<p>1. Filler question about wiring methods?</p>'.repeat(2000)}</main>`;
-  assert.equal(extract(long).truncated, true);
+  assert.equal((await extract(long)).truncated, true);
 });
 
 /* ------------------------------------------------------------------ chunks */
 
-test('chunk: short text is a single chunk', () => {
+await test('chunk: short text is a single chunk', async () => {
   assert.deepEqual(chunkText('1. a\n2. b', 1000), ['1. a\n2. b']);
 });
 
-test('chunk: long text splits on question boundaries', () => {
+await test('chunk: long text splits on question boundaries', async () => {
   const q = (n) => `${n}. Question number ${n}?\na) one\nb) two\nc) three\nd) four`;
   const text = Array.from({ length: 40 }, (_, i) => q(i + 1)).join('\n');
   const chunks = chunkText(text, 500);
@@ -337,13 +337,13 @@ test('chunk: long text splits on question boundaries', () => {
   for (let i = 1; i <= 40; i++) assert.ok(rejoined.includes(`${i}. Question number ${i}?`));
 });
 
-test('chunk: a single over-long line is split rather than passed through', () => {
+await test('chunk: a single over-long line is split rather than passed through', async () => {
   const chunks = chunkText('x'.repeat(5000), 1000);
   assert.ok(chunks.length >= 5);
   for (const c of chunks) assert.ok(c.length <= 1000);
 });
 
-test('chunk: text with no numbering still splits', () => {
+await test('chunk: text with no numbering still splits', async () => {
   const para = 'Some prose about grounding electrodes.\n\n';
   const chunks = chunkText(para.repeat(200), 1000);
   assert.ok(chunks.length > 1);
@@ -353,18 +353,18 @@ test('chunk: text with no numbering still splits', () => {
 
 const answer = (number, extra = {}) => ({ number: String(number), label: 'a', answer: `answer ${number}`, why: '', confidence: 'high', ...extra });
 
-test('merge: one chunk passes straight through', () => {
+await test('merge: one chunk passes straight through', async () => {
   const merged = mergeAnswers([[answer(1), answer(2)]]);
   assert.deepEqual(merged.map((a) => a.number), ['1', '2']);
   assert.equal('part' in merged[0], false, 'the chunk index is an implementation detail');
 });
 
-test('merge: page numbering that continues across chunks is preserved', () => {
+await test('merge: page numbering that continues across chunks is preserved', async () => {
   const merged = mergeAnswers([[answer(1), answer(2)], [answer(3), answer(4)]]);
   assert.deepEqual(merged.map((a) => a.number), ['1', '2', '3', '4']);
 });
 
-test('merge: an unnumbered page restarting at 1 per chunk keeps every answer', () => {
+await test('merge: an unnumbered page restarting at 1 per chunk keeps every answer', async () => {
   const merged = mergeAnswers([
     [answer(1, { answer: 'chunk one first' }), answer(2, { answer: 'chunk one second' })],
     [answer(1, { answer: 'chunk two first' }), answer(2, { answer: 'chunk two second' })],
@@ -374,7 +374,7 @@ test('merge: an unnumbered page restarting at 1 per chunk keeps every answer', (
   assert.deepEqual(merged.map((a) => a.answer), ['chunk one first', 'chunk one second', 'chunk two first', 'chunk two second']);
 });
 
-test('merge: a question straddling a boundary is answered once, best first', () => {
+await test('merge: a question straddling a boundary is answered once, best first', async () => {
   const merged = mergeAnswers([
     [answer(1), answer(2, { confidence: 'low', answer: 'half a question' })],
     [answer(2, { confidence: 'high', answer: 'the whole question' }), answer(3)],
@@ -383,19 +383,19 @@ test('merge: a question straddling a boundary is answered once, best first', () 
   assert.equal(merged.find((a) => a.number === '2').answer, 'the whole question');
 });
 
-test('merge: a failed chunk leaves a hole without shifting the rest', () => {
+await test('merge: a failed chunk leaves a hole without shifting the rest', async () => {
   const groups = [[answer(1)], undefined, [answer(3)]];
   assert.deepEqual(mergeAnswers(groups).map((a) => a.number), ['1', '3']);
 });
 
 /* ------------------------------------------------------------------- parse */
 
-test('parse: strict schema output', () => {
+await test('parse: strict schema output', async () => {
   const q = parseQuestions('{"questions":[{"number":"1","label":"b","answer":"230.34","why":"","confidence":"high"}]}');
   assert.deepEqual(q, [{ number: '1', label: 'b', answer: '230.34', why: '', confidence: 'high' }]);
 });
 
-test('parse: tolerates a bare array and alternate key names', () => {
+await test('parse: tolerates a bare array and alternate key names', async () => {
   const q = parseQuestions('[{"q":"4","choice":"(c)","text":"12 AWG","explanation":"table 310.16"}]');
   assert.equal(q.length, 1);
   assert.equal(q[0].number, '4');
@@ -404,20 +404,20 @@ test('parse: tolerates a bare array and alternate key names', () => {
   assert.equal(q[0].confidence, 'medium');
 });
 
-test('parse: digs JSON out of a markdown fence', () => {
+await test('parse: digs JSON out of a markdown fence', async () => {
   const q = parseQuestions('```json\n{"questions":[{"number":"2","label":"a","answer":"Yes","why":"","confidence":"low"}]}\n```');
   assert.equal(q[0].answer, 'Yes');
 });
 
-test('parse: strips a Q prefix and trailing punctuation from the number', () => {
+await test('parse: strips a Q prefix and trailing punctuation from the number', async () => {
   assert.equal(parseQuestions('{"questions":[{"number":"Q7.","label":"","answer":"x","why":"","confidence":"high"}]}')[0].number, '7');
 });
 
-test('parse: drops entries with neither a label nor an answer', () => {
+await test('parse: drops entries with neither a label nor an answer', async () => {
   assert.equal(parseQuestions('{"questions":[{"number":"1","label":"","answer":"","why":"","confidence":"low"}]}').length, 0);
 });
 
-test('parse: unusable content throws', () => {
+await test('parse: unusable content throws', async () => {
   assert.throws(() => parseQuestions('I could not find any questions.'));
 });
 
@@ -425,12 +425,12 @@ test('parse: unusable content throws', () => {
 
 const err = (status, error, settings = { model: 'gpt-5.4-nano' }) => classifyError(status, error ? { error } : null, settings);
 
-test('errors: a context-length 400 becomes a truncation the caller can recover from', () => {
+await test('errors: a context-length 400 becomes a truncation the caller can recover from', async () => {
   const e = err(400, { code: 'context_length_exceeded', message: "This model's maximum context length is 272000 tokens." });
   assert.ok(e instanceof TruncatedError, 'must be recoverable by splitting, not a dead end');
 });
 
-test('errors: 401 names the key and points at settings', () => {
+await test('errors: 401 names the key and points at settings', async () => {
   const e = err(401, { code: 'invalid_api_key', message: 'Incorrect API key provided: sk-xxx.' });
   assert.equal(e.kind, 'auth');
   assert.match(e.message, /rejected your API key/i);
@@ -438,36 +438,36 @@ test('errors: 401 names the key and points at settings', () => {
   assert.equal(e.retryable, false);
 });
 
-test('errors: out of credit is never retried', () => {
+await test('errors: out of credit is never retried', async () => {
   const e = err(429, { code: 'insufficient_quota', message: 'You exceeded your current quota.' });
   assert.equal(e.kind, 'quota');
   assert.equal(e.retryable, false);
   assert.match(e.hint, /billing/i);
 });
 
-test('errors: a genuine rate limit is retried', () => {
+await test('errors: a genuine rate limit is retried', async () => {
   const e = err(429, { code: 'rate_limit_exceeded', message: 'Rate limit reached for gpt-5.4-nano.' });
   assert.equal(e.kind, 'rate');
   assert.equal(e.retryable, true);
 });
 
-test('errors: a retired model names the model and the remedy', () => {
+await test('errors: a retired model names the model and the remedy', async () => {
   const e = err(404, { code: 'model_not_found', message: 'The model `gpt-4o` does not exist.' }, { model: 'gpt-4o' });
   assert.equal(e.kind, 'model');
   assert.match(e.message, /gpt-4o/);
   assert.match(e.hint, /different model/i);
 });
 
-test('errors: an unknown route is an endpoint problem, not a model problem', () => {
+await test('errors: an unknown route is an endpoint problem, not a model problem', async () => {
   assert.equal(err(404, { message: 'Unknown request URL.' }).kind, 'endpoint');
   assert.equal(err(405, null).kind, 'endpoint');
 });
 
-test('errors: a server error is retried', () => {
+await test('errors: a server error is retried', async () => {
   assert.equal(err(503, null).retryable, true);
 });
 
-test('errors: a gateway answering with HTML still produces a message', () => {
+await test('errors: a gateway answering with HTML still produces a message', async () => {
   const e = err(502, null);
   assert.ok(e.message.length > 0);
 });
@@ -476,12 +476,12 @@ test('errors: a gateway answering with HTML still produces a message', () => {
 
 const outputText = (text, extra = {}) => ({ type: 'message', content: [{ type: 'output_text', text }], ...extra });
 
-test('responses: reads the message item, not output[0]', () => {
+await test('responses: reads the message item, not output[0]', async () => {
   const data = { status: 'completed', output: [{ type: 'reasoning', summary: [] }, outputText('{"questions":[]}')] };
   assert.equal(parseResponsesPayload(data), '{"questions":[]}');
 });
 
-test('responses: a commentary message never wins over the answer', () => {
+await test('responses: a commentary message never wins over the answer', async () => {
   const data = {
     status: 'completed',
     output: [
@@ -493,58 +493,58 @@ test('responses: a commentary message never wins over the answer', () => {
   assert.match(parseResponsesPayload(data), /"number":"1"/);
 });
 
-test('responses: status failed reads the top-level error, not the HTTP envelope', () => {
+await test('responses: status failed reads the top-level error, not the HTTP envelope', async () => {
   assert.throws(
     () => parseResponsesPayload({ status: 'failed', error: { code: 'server_error', message: 'Upstream exploded.' } }),
     /Upstream exploded/,
   );
 });
 
-test('responses: running out of output tokens is a truncation, not a failure', () => {
+await test('responses: running out of output tokens is a truncation, not a failure', async () => {
   assert.throws(
     () => parseResponsesPayload({ status: 'incomplete', incomplete_details: { reason: 'max_output_tokens' } }),
     TruncatedError,
   );
 });
 
-test('responses: a refusal is reported as one', () => {
+await test('responses: a refusal is reported as one', async () => {
   const data = { status: 'completed', output: [{ type: 'message', content: [{ type: 'refusal', refusal: 'No.' }] }] };
   assert.throws(() => parseResponsesPayload(data), /declined/);
 });
 
-test('responses: a gateway that sends output_text is accepted', () => {
+await test('responses: a gateway that sends output_text is accepted', async () => {
   assert.equal(parseResponsesPayload({ status: 'completed', output: [], output_text: '{"questions":[]}' }), '{"questions":[]}');
 });
 
-test('chat: finish_reason length is a truncation', () => {
+await test('chat: finish_reason length is a truncation', async () => {
   assert.throws(
     () => parseChatPayload({ choices: [{ finish_reason: 'length', message: { content: '{"quest' } }] }),
     TruncatedError,
   );
 });
 
-test('chat: content comes back verbatim', () => {
+await test('chat: content comes back verbatim', async () => {
   assert.equal(parseChatPayload({ choices: [{ finish_reason: 'stop', message: { content: '{"questions":[]}' } }] }), '{"questions":[]}');
 });
 
 /* -------------------------------------------------------------- capability */
 
-const caps = () => ({ format: 'json_schema', reasoning: true, verbosity: true, maxTokens: true, temperature: true, store: true });
+const caps = () => ({ format: 'json_schema', reasoning: true, verbosity: true, maxTokens: true, temperature: true, store: true, images: true });
 
-test('relax: a temperature complaint drops temperature first', () => {
+await test('relax: a temperature complaint drops temperature first', async () => {
   const c = caps();
   assert.equal(relaxCaps({ status: 400, message: "Unsupported value: 'temperature' does not support 0 with this model." }, c), true);
   assert.equal(c.temperature, false);
   assert.equal(c.format, 'json_schema');
 });
 
-test('relax: a max_tokens complaint drops the token cap', () => {
+await test('relax: a max_tokens complaint drops the token cap', async () => {
   const c = caps();
   relaxCaps({ status: 400, param: 'max_tokens', code: 'unsupported_parameter', message: "Unsupported parameter: 'max_tokens' is not supported with this model." }, c);
   assert.equal(c.maxTokens, false);
 });
 
-test('relax: a schema complaint falls back to plain JSON, then to none', () => {
+await test('relax: a schema complaint falls back to plain JSON, then to none', async () => {
   const c = caps();
   relaxCaps({ status: 400, message: "Invalid parameter: 'response_format' of type 'json_schema' is not supported." }, c);
   assert.equal(c.format, 'json_object');
@@ -552,19 +552,19 @@ test('relax: a schema complaint falls back to plain JSON, then to none', () => {
   assert.equal(c.format, 'none', 'a gateway supporting neither must still be reachable');
 });
 
-test('relax: an unrelated 400 never turns request retention back on', () => {
+await test('relax: an unrelated 400 never turns request retention back on', async () => {
   const c = caps();
   while (relaxCaps({ status: 400, message: 'something unfamiliar' }, c)) { /* drain */ }
   assert.equal(c.store, true, 'store must only come off when the server names it');
 });
 
-test('relax: a store complaint does drop it', () => {
+await test('relax: a store complaint does drop it', async () => {
   const c = caps();
   relaxCaps({ status: 400, param: 'store', message: "Unknown parameter: 'store'." }, c);
   assert.equal(c.store, false);
 });
 
-test('relax: eventually gives up', () => {
+await test('relax: eventually gives up', async () => {
   const c = caps();
   let guard = 0;
   while (relaxCaps({ status: 400, message: 'something unfamiliar' }, c)) {
@@ -573,38 +573,122 @@ test('relax: eventually gives up', () => {
   assert.equal(c.format, 'none');
 });
 
+await test('relax: a no-vision complaint drops only images', async () => {
+  const c = caps();
+  assert.equal(relaxCaps({ status: 400, message: "This model does not support image inputs." }, c), true);
+  assert.equal(c.images, false);
+  assert.equal(c.format, 'json_schema', 'nothing else should have been touched');
+  assert.equal(c.reasoning, true);
+});
+
+await test('relax: an unrecognised 400 sheds images before other capabilities', async () => {
+  const c = caps();
+  relaxCaps({ status: 400, message: 'something unfamiliar' }, c);
+  assert.equal(c.images, false);
+  assert.equal(c.verbosity, true, 'images should go first, ahead of verbosity');
+});
+
+/* ------------------------------------------------------------------- images */
+
+const IMG_A = { id: 1, value: 'data:image/png;base64,AAAA', alt: '' };
+const IMG_B = { id: 2, value: 'https://example.test/chart.png', alt: 'a bar chart' };
+
+await test('images: text with no tokens passes through untouched', async () => {
+  const text = '1. What is 2+2?';
+  assert.equal(buildContentParts(text, [], true), text);
+  assert.equal(buildContentParts(text, [IMG_A], true), text);
+});
+
+await test('images: a page with no images available degrades tokens to alt text', async () => {
+  const text = '1. [[IMG:2]]\nWhat does the chart show?';
+  const out = buildContentParts(text, [IMG_B], false);
+  assert.equal(typeof out, 'string');
+  assert.match(out, /\[image: a bar chart\]/);
+});
+
+await test('images: an image with no alt degrades to an omitted marker', async () => {
+  const out = buildContentParts('[[IMG:1]] diagram above', [IMG_A], false);
+  assert.match(out, /\[image omitted\]/);
+});
+
+await test('images: useImages splits interleaved text/image parts in reading order', async () => {
+  const text = 'Question 1:\n[[IMG:1]]\nWhat voltage is shown?';
+  const parts = buildContentParts(text, [IMG_A], true);
+  assert.ok(Array.isArray(parts));
+  assert.deepEqual(parts.map((p) => p.type), ['text', 'image', 'text']);
+  assert.match(parts[0].text, /Question 1/);
+  assert.equal(parts[1].value, IMG_A.value);
+  assert.match(parts[2].text, /What voltage/);
+});
+
+await test('images: image-only question produces no leading/trailing empty text parts', async () => {
+  const parts = buildContentParts('[[IMG:1]]', [IMG_A], true);
+  assert.deepEqual(parts, [{ type: 'image', value: IMG_A.value }]);
+});
+
+await test('images: multiple images across a page all resolve, in order', async () => {
+  const text = '1. [[IMG:1]] first\n2. [[IMG:2]] second';
+  const parts = buildContentParts(text, [IMG_A, IMG_B], true);
+  const imgs = parts.filter((p) => p.type === 'image').map((p) => p.value);
+  assert.deepEqual(imgs, [IMG_A.value, IMG_B.value]);
+});
+
+await test('images: a token whose image was dropped (e.g. by truncation) resolves to nothing', async () => {
+  const parts = buildContentParts('before [[IMG:99]] after', [IMG_A], true);
+  assert.equal(typeof parts, 'string', 'no known image resolved, so this degrades like the no-image case');
+  assert.doesNotMatch(parts, /\[\[IMG/);
+});
+
+await test('body: image parts become flat input_image entries on Responses', async () => {
+  const promptWithImages = { system: 'be an answer key', user: [{ type: 'text', text: 'Q1: ' }, { type: 'image', value: 'data:image/png;base64,AAAA' }] };
+  const settings = { ...DEFAULT_SETTINGS, apiKey: 'sk-x' };
+  const body = buildResponsesBody(settings, promptWithImages, initialCaps(settings));
+  const content = body.input[0].content;
+  assert.deepEqual(content[0], { type: 'input_text', text: 'Q1: ' });
+  assert.deepEqual(content[1], { type: 'input_image', image_url: 'data:image/png;base64,AAAA', detail: 'high' });
+});
+
+await test('body: image parts become nested image_url entries on Chat Completions', async () => {
+  const promptWithImages = { system: 'be an answer key', user: [{ type: 'text', text: 'Q1: ' }, { type: 'image', value: 'https://example.test/x.png' }] };
+  const settings = { ...DEFAULT_SETTINGS, apiKey: 'sk-x' };
+  const body = buildChatBody(settings, promptWithImages, initialCaps(settings));
+  const content = body.messages[1].content;
+  assert.deepEqual(content[0], { type: 'text', text: 'Q1: ' });
+  assert.deepEqual(content[1], { type: 'image_url', image_url: { url: 'https://example.test/x.png', detail: 'high' } });
+});
+
 /* ------------------------------------------------------------------ format */
 
-test('format: multiple choice shows the option letter', () => {
+await test('format: multiple choice shows the option letter', async () => {
   assert.equal(formatAnswer({ number: '1', label: 'b', answer: '230.34' }), 'Q1: b) 230.34');
 });
 
-test('format: an open question shows just the answer', () => {
+await test('format: an open question shows just the answer', async () => {
   assert.equal(formatAnswer({ number: '4', label: '', answer: '230.34' }), 'Q4: 230.34');
 });
 
-test('format: a label that already carries a bracket is not doubled', () => {
+await test('format: a label that already carries a bracket is not doubled', async () => {
   assert.equal(formatAnswer({ number: '2', label: 'c)', answer: 'Neutral' }), 'Q2: c) Neutral');
 });
 
-test('format: the whole sheet is one line per question', () => {
+await test('format: the whole sheet is one line per question', async () => {
   const text = formatAll([{ number: '1', label: 'a', answer: 'One' }, { number: '2', label: '', answer: 'Two' }]);
   assert.equal(text, 'Q1: a) One\nQ2: Two');
 });
 
-test('format: questions sort numerically, not lexically', () => {
+await test('format: questions sort numerically, not lexically', async () => {
   const sorted = sortAnswers([{ number: '10' }, { number: '2' }, { number: '1' }]).map((a) => a.number);
   assert.deepEqual(sorted, ['1', '2', '10']);
 });
 
-test('format: suffixed numbers stay next to their parent', () => {
+await test('format: suffixed numbers stay next to their parent', async () => {
   const sorted = sortAnswers([{ number: '3b' }, { number: '3a' }, { number: '2' }]).map((a) => a.number);
   assert.deepEqual(sorted, ['2', '3a', '3b']);
 });
 
 /* ------------------------------------------------------------------ prompt */
 
-test('prompt: the strict schema is well formed', () => {
+await test('prompt: the strict schema is well formed', async () => {
   const walk = (node) => {
     if (node.type !== 'object') return;
     assert.equal(node.additionalProperties, false, 'every object needs additionalProperties:false');
@@ -616,7 +700,7 @@ test('prompt: the strict schema is well formed', () => {
   walk(ANSWER_SCHEMA);
 });
 
-test('prompt: the working field is generated before the answer', () => {
+await test('prompt: the working field is generated before the answer', async () => {
   // Structured output is emitted in schema order, so this is not cosmetic:
   // `answer` ahead of `why` makes the model commit to a number before doing
   // any arithmetic. Reordering these will quietly cost accuracy on maths.
@@ -628,13 +712,13 @@ test('prompt: the working field is generated before the answer', () => {
   assert.ok(required.indexOf('why') < required.indexOf('answer'), 'required order must match too');
 });
 
-test('prompt: the instructions tell the model to work it out before answering', () => {
+await test('prompt: the instructions tell the model to work it out before answering', async () => {
   const p = buildPrompt({ text: '1. A question?' });
   assert.match(p.system, /work the question out/i);
   assert.match(p.system, /do not answer first/i);
 });
 
-test('prompt: page text and course context reach the model', () => {
+await test('prompt: page text and course context reach the model', async () => {
   const p = buildPrompt({ title: 'Exam 3', url: 'https://x.test', text: '1. A question?', extraInstructions: '2023 NEC', questionCount: 1 });
   assert.match(p.user, /Exam 3/);
   assert.match(p.user, /1\. A question\?/);
@@ -642,12 +726,12 @@ test('prompt: page text and course context reach the model', () => {
   assert.doesNotMatch(p.system, /Reply with JSON only/);
 });
 
-test('prompt: losing schema enforcement adds the JSON instruction', () => {
+await test('prompt: losing schema enforcement adds the JSON instruction', async () => {
   const p = buildPrompt({ text: '1. A question?', schemaEnforced: false });
   assert.match(p.system, /Reply with JSON only/);
 });
 
-test('prompt: scraped hints are labelled unverified', () => {
+await test('prompt: scraped hints are labelled unverified', async () => {
   const p = buildPrompt({ text: '1. A question?', hints: 'answer: b' });
   assert.match(p.user, /unverified/i);
 });
@@ -660,7 +744,7 @@ const bodyFor = (overrides = {}) => {
   return buildResponsesBody(settings, PROMPT, initialCaps(settings));
 };
 
-test('body: the shipped defaults produce a valid Responses request', () => {
+await test('body: the shipped defaults produce a valid Responses request', async () => {
   const body = bodyFor();
   assert.equal(body.model, DEFAULT_SETTINGS.model);
   assert.equal(body.text.format.type, 'json_schema');
@@ -670,17 +754,17 @@ test('body: the shipped defaults produce a valid Responses request', () => {
   assert.ok(body.max_output_tokens > 0);
 });
 
-test('body: the default model is a reasoning model, so no temperature is sent', () => {
+await test('body: the default model is a reasoning model, so no temperature is sent', async () => {
   const body = bodyFor();
   assert.equal('temperature' in body, false, 'gpt-5.x rejects temperature with a 400');
   assert.equal(body.reasoning.effort, DEFAULT_SETTINGS.effort);
 });
 
-test('body: the default effort is one the API accepts', () => {
+await test('body: the default effort is one the API accepts', async () => {
   assert.ok(['none', 'minimal', 'low', 'medium', 'high'].includes(DEFAULT_SETTINGS.effort));
 });
 
-test('body: more thinking gets a bigger output budget, since reasoning is billed there', () => {
+await test('body: more thinking gets a bigger output budget, since reasoning is billed there', async () => {
   const low = bodyFor({ effort: 'low' }).max_output_tokens;
   const medium = bodyFor({ effort: 'medium' }).max_output_tokens;
   const high = bodyFor({ effort: 'high' }).max_output_tokens;
@@ -688,14 +772,14 @@ test('body: more thinking gets a bigger output budget, since reasoning is billed
   assert.ok(high > medium, 'high must have more room than medium');
 });
 
-test('body: a non-reasoning model gets temperature 0 and no reasoning block', () => {
+await test('body: a non-reasoning model gets temperature 0 and no reasoning block', async () => {
   const settings = { ...DEFAULT_SETTINGS, apiKey: 'sk-x', model: 'some-proxy-model' };
   const body = buildResponsesBody(settings, PROMPT, initialCaps(settings));
   assert.equal(body.temperature, 0);
   assert.equal('reasoning' in body, false);
 });
 
-test('body: the chat shape wraps the schema and nests nothing', () => {
+await test('body: the chat shape wraps the schema and nests nothing', async () => {
   const settings = { ...DEFAULT_SETTINGS, apiKey: 'sk-x' };
   const body = buildChatBody(settings, PROMPT, initialCaps(settings));
   assert.equal(body.response_format.json_schema.name, 'answer_sheet');
@@ -708,7 +792,7 @@ test('body: the chat shape wraps the schema and nests nothing', () => {
 
 /* ---------------------------------------------------------------- settings */
 
-test('settings: an install still on the old default pair is moved forward', () => {
+await test('settings: an install still on the old default pair is moved forward', async () => {
   const before = { model: 'gpt-5.4-nano', effort: 'low', showWhy: true, settingsVersion: 0 };
   const after = migrate(before);
   assert.equal(after.model, DEFAULT_SETTINGS.model);
@@ -717,37 +801,37 @@ test('settings: an install still on the old default pair is moved forward', () =
   assert.equal(before.model, 'gpt-5.4-nano', 'must not mutate the input');
 });
 
-test('settings: a model the user chose is never overwritten', () => {
+await test('settings: a model the user chose is never overwritten', async () => {
   const chosen = migrate({ model: 'gpt-5.6-sol', effort: 'low', settingsVersion: 0 });
   assert.equal(chosen.model, 'gpt-5.6-sol');
   assert.equal(chosen.effort, 'low', 'their effort is theirs too');
 });
 
-test('settings: a superseded default moves even if the effort was changed', () => {
+await test('settings: a superseded default moves even if the effort was changed', async () => {
   // The migration keys on the model alone. Requiring the effort to match as
   // well left anyone who had touched that dropdown stuck on the old model.
   const partly = migrate({ model: 'gpt-5.4-nano', effort: 'high', settingsVersion: 0 });
   assert.equal(partly.model, DEFAULT_SETTINGS.model);
 });
 
-test('settings: an install on the retired gpt-4.1-mini default is rescued', () => {
+await test('settings: an install on the retired gpt-4.1-mini default is rescued', async () => {
   // That ID 404s now, so leaving it would mean every run fails.
   const old = migrate({ model: 'gpt-4.1-mini', settingsVersion: 0 });
   assert.equal(old.model, DEFAULT_SETTINGS.model);
 });
 
-test('settings: migration runs once, then leaves settings alone', () => {
+await test('settings: migration runs once, then leaves settings alone', async () => {
   const current = { model: 'gpt-5.4-nano', effort: 'low', settingsVersion: DEFAULT_SETTINGS.settingsVersion };
   assert.equal(migrate(current), current, 'an already-migrated install is returned untouched');
 });
 
-test('settings: a fresh install needs no migration of its values', () => {
+await test('settings: a fresh install needs no migration of its values', async () => {
   const fresh = migrate({ ...DEFAULT_SETTINGS, settingsVersion: 0 });
   assert.equal(fresh.model, DEFAULT_SETTINGS.model);
   assert.equal(fresh.effort, DEFAULT_SETTINGS.effort);
 });
 
-test('settings: a plain-http proxy is rejected, except on this machine', () => {
+await test('settings: a plain-http proxy is rejected, except on this machine', async () => {
   assert.equal(isInsecureBase('http://proxy.example.com/v1'), true);
   assert.equal(isInsecureBase('http://localhost:11434/v1'), false);
   assert.equal(isInsecureBase('http://127.0.0.1:1234/v1'), false);
@@ -755,7 +839,7 @@ test('settings: a plain-http proxy is rejected, except on this machine', () => {
   assert.equal(isInsecureBase('https://proxy.example.com/v1'), false);
 });
 
-test('settings: the page key ignores the fragment but not the path', () => {
+await test('settings: the page key ignores the fragment but not the path', async () => {
   assert.equal(pageKey('https://x.test/exam#q3'), pageKey('https://x.test/exam'));
   assert.notEqual(pageKey('https://x.test/exam/2'), pageKey('https://x.test/exam'));
 });

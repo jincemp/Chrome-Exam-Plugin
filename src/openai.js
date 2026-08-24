@@ -20,6 +20,9 @@ const BASE_BACKOFF_MS = 800;
 /** Models that reject `temperature` outright and bill their thinking as output. */
 const REASONING_RE = /^(o\d|gpt-[5-9])/i;
 
+/** Matches the [[IMG:n]] tokens extract.js leaves in page text where an image was found. */
+const IMAGE_TOKEN_RE = /\[\[IMG:(\d+)\]\]/g;
+
 /** Remembers which endpoint a given base URL actually implements. */
 const endpointCache = new Map();
 
@@ -188,14 +191,73 @@ export function initialCaps(settings) {
     maxTokens: true,
     temperature: !reasoning,
     store: true,
+    images: true,
   };
+}
+
+/**
+ * Turns a chunk's [[IMG:n]] tokens into the interleaved text/image parts the
+ * multimodal APIs want, in the order the images appear on the page. When
+ * `useImages` is false - no images this chunk, or a model that just told us it
+ * can't take them - tokens degrade to their alt text (or an "omitted" marker
+ * when there is none) so the model never sees a raw token. Returns the original
+ * string unchanged whenever there is nothing to interleave, so the ordinary
+ * text-only chunk never leaves the pre-image request shape.
+ * @param {string} text
+ * @param {Array<{id:number,value:string,alt?:string}>} [images]
+ * @param {boolean} useImages
+ * @returns {string|Array<{type:'text',text:string}|{type:'image',value:string}>}
+ */
+export function buildContentParts(text, images, useImages) {
+  const byId = new Map((images || []).map((img) => [img.id, img]));
+
+  if (!useImages || !byId.size) {
+    return text.replace(IMAGE_TOKEN_RE, (m, n) => {
+      const img = byId.get(Number(n));
+      if (!img) return '';
+      return img.alt ? `[image: ${img.alt}]` : '[image omitted]';
+    });
+  }
+
+  const parts = [];
+  let last = 0;
+  for (const match of text.matchAll(IMAGE_TOKEN_RE)) {
+    const before = text.slice(last, match.index);
+    if (before) parts.push({ type: 'text', text: before });
+    const img = byId.get(Number(match[1]));
+    if (img) parts.push({ type: 'image', value: img.value });
+    last = match.index + match[0].length;
+  }
+  // No token in this text actually resolved to a captured image (e.g. one was
+  // dropped by truncation) - fall back to the plain-string path, stripping the
+  // raw tokens rather than leaking [[IMG:n]] syntax into the prompt.
+  if (!parts.some((p) => p.type === 'image')) return text.replace(IMAGE_TOKEN_RE, '');
+  const rest = text.slice(last);
+  if (rest) parts.push({ type: 'text', text: rest });
+  return parts;
+}
+
+/** Generic content parts -> the flat shape /v1/responses expects. */
+function toResponsesContent(user) {
+  if (typeof user === 'string') return user;
+  return user.map((p) => (p.type === 'image'
+    ? { type: 'input_image', image_url: p.value, detail: 'high' }
+    : { type: 'input_text', text: p.text }));
+}
+
+/** Generic content parts -> the nested shape /v1/chat/completions expects. */
+function toChatContent(user) {
+  if (typeof user === 'string') return user;
+  return user.map((p) => (p.type === 'image'
+    ? { type: 'image_url', image_url: { url: p.value, detail: 'high' } }
+    : { type: 'text', text: p.text }));
 }
 
 export function buildResponsesBody(settings, prompt, caps) {
   const body = {
     model: settings.model,
     instructions: prompt.system,
-    input: [{ role: 'user', content: prompt.user }],
+    input: [{ role: 'user', content: toResponsesContent(prompt.user) }],
   };
 
   const text = {};
@@ -219,7 +281,7 @@ export function buildChatBody(settings, prompt, caps) {
     model: settings.model,
     messages: [
       { role: 'system', content: prompt.system },
-      { role: 'user', content: prompt.user },
+      { role: 'user', content: toChatContent(prompt.user) },
     ],
   };
 
@@ -326,9 +388,10 @@ export async function answerQuestions(settings, promptInput, signal) {
   // Each pass either succeeds or removes one thing the model objected to.
   for (let pass = 0; pass < 12; pass++) {
     const prompt = buildPrompt({ ...promptInput, schemaEnforced: caps.format === 'json_schema' });
+    const promptForBody = { ...prompt, user: buildContentParts(prompt.user, promptInput.images, caps.images) };
     const responses = endpoint === 'responses';
     const path = responses ? '/responses' : '/chat/completions';
-    const body = responses ? buildResponsesBody(settings, prompt, caps) : buildChatBody(settings, prompt, caps);
+    const body = responses ? buildResponsesBody(settings, promptForBody, caps) : buildChatBody(settings, promptForBody, caps);
 
     let data;
     try {
@@ -376,11 +439,16 @@ export function relaxCaps(err, caps) {
   if (caps.verbosity && /verbosity/.test(text)) { caps.verbosity = false; return true; }
   if (caps.store && /\bstore\b/.test(text)) { caps.store = false; return true; }
   if (caps.maxTokens && /max_(output|completion)_tokens|max_tokens/.test(text)) { caps.maxTokens = false; return true; }
+  if (caps.images && /\bimage|vision|multimodal|modalit(y|ies)\b/.test(text)) { caps.images = false; return true; }
   if (/json_schema|json_object|response_format|\bschema\b|\bformat\b|structured/.test(text) && weakenFormat()) return true;
 
   // Unknown 400: shed parameters in order of how little we need them. `store` is
   // deliberately absent - it only comes off when the server names it, because
-  // dropping it silently opts the user's exam text into retention.
+  // dropping it silently opts the user's exam text into retention. Images go
+  // first: an unrecognised request shape is more often about the unusual
+  // multimodal content than an ordinary parameter, and falling back to alt
+  // text/omitted markers keeps the rest of the request untouched.
+  if (caps.images) { caps.images = false; return true; }
   if (caps.verbosity) { caps.verbosity = false; return true; }
   if (caps.reasoning) { caps.reasoning = false; return true; }
   if (caps.temperature) { caps.temperature = false; return true; }

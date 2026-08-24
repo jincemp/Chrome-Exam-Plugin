@@ -2,22 +2,28 @@
  * Injected into the page (and every frame) by chrome.scripting.executeScript.
  *
  * This file runs as a classic script in an isolated world, so it must not use
- * imports and must end with an expression - Chrome hands that expression's
- * value back as InjectionResult.result.
+ * imports and must end with an expression - Chrome awaits that expression's
+ * value (it is a Promise, since capturing images is asynchronous) and hands the
+ * settled value back as InjectionResult.result.
  *
  * The goal is readable text that keeps the page's line structure intact, because
  * question numbering ("3." / "Q3)" ) and option labels ("b) 230.34") only make
- * sense line by line.
+ * sense line by line. Diagrams are folded into that same stream: a captured
+ * image leaves a small [[IMG:n]] token exactly where the picture sat in reading
+ * order, so a question that is image-only, image-plus-text, or text-only all
+ * come out the same way - a person scrolling the page would read them in that
+ * order too.
  */
-(() => {
+(async () => {
   const MAX_CHARS = 60000;
   const MAX_HINT_CHARS = 2000;
   const MIN_SELECTION_CHARS = 25;
 
-  // Never contributes text.
+  // Never contributes text. IMG/CANVAS/SVG used to be skipped outright; they are
+  // handled explicitly further down instead, so they can be captured as images.
   const SKIP_TAGS = new Set([
     'SCRIPT', 'STYLE', 'NOSCRIPT', 'TEMPLATE', 'HEAD', 'LINK', 'META', 'TITLE',
-    'SVG', 'CANVAS', 'IFRAME', 'FRAME', 'OBJECT', 'EMBED', 'VIDEO', 'AUDIO',
+    'IFRAME', 'FRAME', 'OBJECT', 'EMBED', 'VIDEO', 'AUDIO',
     'MAP', 'AREA', 'DIALOG', 'PATH', 'DATALIST', 'OPTGROUP',
   ]);
 
@@ -83,7 +89,7 @@
     return cs.display !== 'none' && cs.visibility !== 'hidden' && cs.opacity !== '0';
   };
 
-  const isBlock = (el, cs) => (cs ? !INLINE_DISPLAYS.has(cs.display) : BLOCK_TAGS.has(el.tagName));
+  const isBlock = (el, cs) => (cs ? !INLINE_DISPLAYS.has(cs.display) : BLOCK_TAGS.has(el.tagName.toUpperCase()));
 
   // A <header> nested in content is a section heading, not the site banner - and
   // it routinely holds the question stem. Per the HTML spec these tags are only
@@ -93,14 +99,42 @@
   const looksLikeBoilerplate = (el) => {
     const role = el.getAttribute && el.getAttribute('role');
     if (role && BOILERPLATE_ROLES.has(role.toLowerCase())) return true;
-    if (el.tagName === 'NAV') return true;
-    if (!BOILERPLATE_TAGS.has(el.tagName)) return false;
+    const tag = el.tagName.toUpperCase();
+    if (tag === 'NAV') return true;
+    if (!BOILERPLATE_TAGS.has(tag)) return false;
     try {
       return !el.parentElement?.closest(CONTENT_ANCESTORS);
     } catch {
       return true;
     }
   };
+
+  /* ------------------------------------------------------------------ images */
+
+  const MAX_IMAGES = 8;         // per frame - keeps payload and cost bounded
+  const MAX_IMAGE_DIM = 1024;   // longest side, in CSS pixels, after downscaling
+  const MIN_IMAGE_AREA = 80 * 60; // smaller than this is almost always an icon
+
+  // Reset per textOf() call (see below), so a discarded first pass (the
+  // boilerplate-stripped one, when it comes back too short) cannot leave stale
+  // entries behind for the second.
+  let imageCounter = 0;
+  let pendingImages = [];
+
+  /**
+   * Queues an element for capture and returns the token id to splice into the
+   * text stream, or null once the per-frame cap is reached - in which case the
+   * caller falls back to whatever text-only signal it already had (alt text, or
+   * nothing).
+   */
+  const queueImage = (kind, el, alt) => {
+    if (imageCounter >= MAX_IMAGES) return null;
+    const id = ++imageCounter;
+    pendingImages.push({ id, kind, el, alt });
+    return id;
+  };
+
+  const IMAGE_TOKEN_RE = /\[\[IMG:(\d+)\]\]/g;
 
   /* ---------------------------------------------------------------- walking */
 
@@ -120,7 +154,8 @@
     if (node.nodeType !== Node.ELEMENT_NODE) return;
 
     const el = /** @type {Element} */ (node);
-    if (SKIP_TAGS.has(el.tagName)) return;
+    const tag = el.tagName.toUpperCase();
+    if (SKIP_TAGS.has(tag)) return;
     if (opts.dropBoilerplate && looksLikeBoilerplate(el)) return;
 
     const cs = styleOf(el);
@@ -128,8 +163,8 @@
 
     // A cell separates with a pipe and lets its row supply the line break; <br>
     // has no box of its own but always breaks.
-    const cell = el.tagName === 'TD' || el.tagName === 'TH' || cs?.display === 'table-cell';
-    const block = !cell && (el.tagName === 'BR' || isBlock(el, cs));
+    const cell = tag === 'TD' || tag === 'TH' || cs?.display === 'table-cell';
+    const block = !cell && (tag === 'BR' || isBlock(el, cs));
     if (block) out.push('\n');
     if (cell) out.push(' | ');
 
@@ -138,7 +173,7 @@
 
     // Radio / checkbox options often carry their text only in a sibling label,
     // but the checked state is worth recording either way.
-    if (el.tagName === 'INPUT') {
+    if (tag === 'INPUT') {
       const type = (el.getAttribute('type') || 'text').toLowerCase();
       if (type === 'radio' || type === 'checkbox') {
         // The live property is the truth; the attribute is only the default.
@@ -155,7 +190,7 @@
       if (el.value) out.push(String(el.value));
       return;
     }
-    if (el.tagName === 'SELECT') {
+    if (tag === 'SELECT') {
       const opts = Array.from(el.options || el.querySelectorAll('option'));
       const optionText = (o) => String(o.text ?? o.textContent ?? '').trim();
       const joined = opts.map(optionText).filter(Boolean).join(' / ');
@@ -179,14 +214,44 @@
       }
       return;
     }
-    if (el.tagName === 'IMG') {
-      const alt = el.getAttribute('alt');
-      if (alt && alt.trim()) out.push(`[image: ${alt.trim()}]`);
+    if (tag === 'IMG') {
+      const alt = (el.getAttribute('alt') || '').trim();
+      // alt="" (present but empty) is the standard way to mark an image
+      // decorative - the page itself says there is nothing here worth reading.
+      const decorative = el.hasAttribute('alt') && !alt;
+      const rect = el.getBoundingClientRect?.();
+      const big = !decorative && rect && rect.width * rect.height >= MIN_IMAGE_AREA;
+
+      if (big) {
+        const id = queueImage('img', el, alt);
+        if (id) { out.push(`\n[[IMG:${id}]]\n`); return; }
+      }
+      // Too small, decorative, or the per-frame cap is already spent: fall back
+      // to whatever alt text there is, exactly as before this feature existed.
+      if (alt) out.push(`[image: ${alt}]`);
       return;
+    }
+    if (tag === 'CANVAS') {
+      const rect = el.getBoundingClientRect?.();
+      const big = rect && rect.width * rect.height >= MIN_IMAGE_AREA;
+      if (big) {
+        const id = queueImage('canvas', el, '');
+        if (id) out.push(`\n[[IMG:${id}]]\n`);
+      }
+      return; // nothing else to extract from a canvas either way
+    }
+    if (tag === 'SVG') {
+      const rect = el.getBoundingClientRect?.();
+      const big = rect && rect.width * rect.height >= MIN_IMAGE_AREA;
+      if (big) {
+        const id = queueImage('svg', el, '');
+        if (id) out.push(`\n[[IMG:${id}]]\n`);
+      }
+      return; // do not recurse into <path>/<text> internals - it is one picture
     }
 
     // White-space handling is inherited, so it is tracked down the walk.
-    const preformatted = cs ? PRE_WHITESPACE_RE.test(cs.whiteSpace) : (inPre || el.tagName === 'PRE');
+    const preformatted = cs ? PRE_WHITESPACE_RE.test(cs.whiteSpace) : (inPre || tag === 'PRE');
 
     if (el.shadowRoot) {
       for (const child of el.shadowRoot.childNodes) walk(child, out, opts, depth + 1, preformatted);
@@ -198,7 +263,7 @@
 
   const tidy = (fragments) => fragments
     .join('')
-    .replace(/[ \t ]+/g, ' ')
+    .replace(/[ \t ]+/g, ' ')
     .replace(/ *\n */g, '\n')
     .replace(/\[selected\]\n+/g, '[selected] ')
     .replace(/^\|$/gm, '')
@@ -206,6 +271,10 @@
     .trim();
 
   const textOf = (root, opts) => {
+    // A fresh call owns whatever it finds; a discarded prior pass must not leak
+    // image tokens into this one.
+    imageCounter = 0;
+    pendingImages = [];
     const out = [];
     walk(root, out, opts, 0, false);
     return tidy(out);
@@ -429,13 +498,106 @@
     return [...origins];
   };
 
-  /* ---------------------------------------------------------------- gaps */
+  /* ---------------------------------------------------------------- images */
 
-  /** Questions drawn on a canvas cannot be read at all; say so rather than under-report. */
-  const unreadableRegions = () => {
+  /** A same-document <img> whose decode has not finished; do not wait for it. */
+  const isReady = (img) => img.complete && img.naturalWidth > 0;
+
+  const loadImage = (src) => new Promise((resolve, reject) => {
+    const img = new Image();
+    img.onload = () => resolve(img);
+    img.onerror = () => reject(new Error('image failed to load'));
+    img.src = src;
+  });
+
+  /**
+   * Draws `source` onto a fresh canvas, scaled so neither side exceeds
+   * MAX_IMAGE_DIM, and reads it back as a PNG data URL. Throws SecurityError if
+   * `source` is cross-origin pixels the page never opted into sharing (a
+   * "tainted" canvas) - the caller decides what to do about that.
+   */
+  const rasterize = (source, naturalW, naturalH) => {
+    const w0 = Math.max(1, Math.round(naturalW || 1));
+    const h0 = Math.max(1, Math.round(naturalH || 1));
+    const scale = Math.min(1, MAX_IMAGE_DIM / Math.max(w0, h0));
+    const w = Math.max(1, Math.round(w0 * scale));
+    const h = Math.max(1, Math.round(h0 * scale));
+
+    const canvas = document.createElement('canvas');
+    canvas.width = w;
+    canvas.height = h;
+    const ctx = canvas.getContext('2d');
+    ctx.drawImage(source, 0, 0, w, h);
+    return canvas.toDataURL('image/png'); // throws SecurityError when tainted
+  };
+
+  /**
+   * Captures one queued element. Returns { kind: 'dataUrl' | 'url', value, alt }
+   * on success, or null when nothing usable could be produced - the caller
+   * treats a null as "unreadable" and drops its token from the text.
+   */
+  const captureOne = async ({ kind, el, alt }) => {
+    try {
+      if (kind === 'img') {
+        if (!isReady(el)) return null; // lazy-loaded and never finished; do not wait
+        try {
+          return { kind: 'dataUrl', value: rasterize(el, el.naturalWidth, el.naturalHeight), alt };
+        } catch {
+          // Cross-origin pixels the canvas would not let us read. OpenAI's own
+          // servers can still fetch a public URL directly - hand it that instead.
+          // A page that requires login for the image (most LMS platforms) will
+          // 401 on their end too; there is no way around that without becoming
+          // the fetcher ourselves, which would need a permission this extension
+          // does not ask for.
+          const src = el.currentSrc || el.src || '';
+          if (/^https?:\/\//i.test(src)) return { kind: 'url', value: src, alt };
+          return null;
+        }
+      }
+      if (kind === 'canvas') {
+        // No equivalent "src" fallback exists for a canvas - it is programmatically
+        // drawn, not fetched from anywhere.
+        return { kind: 'dataUrl', value: rasterize(el, el.width, el.height), alt: '' };
+      }
+      if (kind === 'svg') {
+        const xml = new XMLSerializer().serializeToString(el);
+        const svgUrl = `data:image/svg+xml;charset=utf-8,${encodeURIComponent(xml)}`;
+        const img = await loadImage(svgUrl);
+        const rect = el.getBoundingClientRect();
+        return { kind: 'dataUrl', value: rasterize(img, rect.width || img.width, rect.height || img.height), alt: '' };
+      }
+    } catch {
+      return null;
+    }
+    return null;
+  };
+
+  /**
+   * Resolves every queued image in order, filtered to the ids that survived
+   * truncation (no point capturing a diagram whose token got cut off the end of
+   * a 60,000-character page). Returns the successful captures and the set of
+   * source elements they came from, so unreadableRegions() below does not
+   * double-count a canvas we already have.
+   */
+  const captureImages = async (pending) => {
+    const images = [];
+    const capturedEls = new Set();
+    for (const item of pending) {
+      const result = await captureOne(item);
+      if (result) {
+        images.push({ id: item.id, ...result });
+        capturedEls.add(item.el);
+      }
+    }
+    return { images, capturedEls };
+  };
+
+  /** Diagrams drawn on a canvas we could not capture (tainted, no src to fall back to). */
+  const unreadableRegions = (capturedEls) => {
     try {
       let count = 0;
       for (const c of document.querySelectorAll('canvas')) {
+        if (capturedEls.has(c)) continue;
         const box = c.getBoundingClientRect?.();
         if (!box || (box.width > 200 && box.height > 100)) count++;
       }
@@ -479,18 +641,42 @@
     const cut = text.lastIndexOf('\n', MAX_CHARS);
     text = text.slice(0, cut > MAX_CHARS * 0.6 ? cut : MAX_CHARS);
     truncated = true;
+    // A cut can land inside a token ("...[[IMG:3"); strip the dangling remainder.
+    text = text.replace(/\[\[IMG:\d*$/, '');
+  }
+
+  // A deliberate selection is plain text with no images of its own (there is no
+  // way to "select" a picture the same way), so the capture pass only matters
+  // when the page's own text is what will actually be sent.
+  let images = [];
+  let unreadableCount;
+  if (!selection) {
+    const survivingIds = new Set([...text.matchAll(IMAGE_TOKEN_RE)].map((m) => Number(m[1])));
+    const toCapture = pendingImages.filter((p) => survivingIds.has(p.id));
+    const captured = await captureImages(toCapture);
+    images = captured.images;
+
+    // Keep text and images in lock-step: a token nothing could be captured for
+    // becomes an honest text marker instead of a dangling reference.
+    const capturedIds = new Set(images.map((i) => i.id));
+    text = text.replace(IMAGE_TOKEN_RE, (m, n) => (capturedIds.has(Number(n)) ? m : '[image not readable]'));
+
+    unreadableCount = unreadableRegions(captured.capturedEls);
+  } else {
+    unreadableCount = unreadableRegions(new Set());
   }
 
   return {
     ok: true,
     frameOrigins: isTop ? crossOriginFrames() : [],
-    unreadable: unreadableRegions(),
+    unreadable: unreadableCount,
     windowed: hasWindowedList(),
     isTop,
     url: location.href,
     title: document.title || '',
     text,
     selection,
+    images,
     hints: isTop ? collectHints() : '',
     questionCount: selection ? countFromText(selection).count : countQuestions(text),
     truncated,

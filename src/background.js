@@ -12,6 +12,11 @@ const CHUNK_CHARS = 14000;   // roughly 3.5k tokens of page text per request
 const MIN_CHUNK_CHARS = 900; // below this, splitting further cannot help
 const MAX_PARALLEL = 3;
 
+// Generous headroom per frame when merging [[IMG:n]] tokens from several
+// frames into one id-space; unrelated to extract.js's own per-frame image cap.
+const IMAGE_ID_STRIDE = 1000;
+const IMAGE_TOKEN_RE = /\[\[IMG:(\d+)\]\]/g;
+
 const IDLE_ICON = { 16: 'icons/icon16.png', 32: 'icons/icon32.png', 48: 'icons/icon48.png', 128: 'icons/icon128.png' };
 const DONE_ICON = { 16: 'icons/icon-done16.png', 32: 'icons/icon-done32.png', 48: 'icons/icon-done48.png', 128: 'icons/icon-done128.png' };
 
@@ -170,12 +175,15 @@ async function readPage(tabId) {
 
   const top = frames.find((f) => f.isTop) || frames[0];
 
-  // A deliberate selection beats everything else on the page.
+  // A deliberate selection beats everything else on the page. It is plain text
+  // - there is no way to "select" a diagram the same way - so it never carries
+  // images, matching what extract.js itself already guarantees on that path.
   if (top.selection) {
     return {
       url: (topFrame || top).url,
       title: (topFrame || top).title || top.title,
       text: top.selection,
+      images: [],
       hints: top.hints || '',
       questionCount: top.questionCount,
       truncated: false,
@@ -188,7 +196,20 @@ async function readPage(tabId) {
     .sort((a, b) => b.text.length - a.text.length)
     .slice(0, 4);
 
-  const text = [top.text, ...others.map((f) => f.text)].filter(Boolean).join('\n\n');
+  // Each frame numbers its [[IMG:n]] tokens from 1 on its own, so two frames
+  // would otherwise collide once stitched together. Give each frame a wide,
+  // fixed slice of id-space up front - simpler and safer than depending on
+  // how many images that particular frame actually captured.
+  const remapped = [top, ...others].map((frame, i) => {
+    const offset = i * IMAGE_ID_STRIDE;
+    return {
+      text: (frame.text || '').replace(IMAGE_TOKEN_RE, (m, n) => `[[IMG:${Number(n) + offset}]]`),
+      images: (frame.images || []).map((img) => ({ ...img, id: img.id + offset })),
+    };
+  });
+
+  const text = remapped.map((f) => f.text).filter(Boolean).join('\n\n');
+  const images = remapped.flatMap((f) => f.images);
   const questionCount = Math.max(top.questionCount, ...others.map((f) => f.questionCount), 0);
 
   // Reached nothing and there is an embedded frame from another origin? That is
@@ -201,6 +222,7 @@ async function readPage(tabId) {
     url: (topFrame || top).url,
     title: (topFrame || top).title || top.title,
     text,
+    images,
     hints: top.hints || '',
     questionCount,
     truncated: frames.some((f) => f.truncated),
@@ -334,12 +356,21 @@ function dedupeByNumber(answers) {
 
 /* --------------------------------------------------------------- the work */
 
+/** Only the images this particular chunk's text actually refers to - never the whole page's. */
+function imagesForChunk(chunk, images) {
+  if (!images || !images.length) return [];
+  const ids = new Set([...chunk.matchAll(IMAGE_TOKEN_RE)].map((m) => Number(m[1])));
+  if (!ids.size) return [];
+  return images.filter((img) => ids.has(img.id));
+}
+
 /** Runs one chunk, halving it if the model runs out of room mid-answer. */
 async function runChunk(settings, page, chunk, part, parts, signal, depth = 0) {
   const promptInput = {
     title: page.title,
     url: page.url,
     text: chunk,
+    images: imagesForChunk(chunk, page.images),
     hints: part === 1 ? page.hints : '',
     questionCount: page.questionCount,
     part,

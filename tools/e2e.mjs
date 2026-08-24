@@ -76,6 +76,17 @@ const ANSWERS = {
   ],
 };
 
+/** Matches tools/fixtures/image-questions.html: image-only, image+text (raster and
+ *  svg), and a text-only baseline in between. */
+const IMAGE_ANSWERS = {
+  questions: [
+    { number: '1', label: 'b', answer: '2.4 A', why: '', confidence: 'high' },
+    { number: '2', label: 'b', answer: '10', why: '', confidence: 'high' },
+    { number: '3', label: 'b', answer: '4', why: '', confidence: 'high' },
+    { number: '4', label: 'b', answer: 'Rectangle', why: '', confidence: 'high' },
+  ],
+};
+
 /* ------------------------------------------------------- mock OpenAI + page */
 
 const seen = { bodies: [], paths: [] };
@@ -105,6 +116,12 @@ const server = http.createServer((req, res) => {
   if (url.pathname === '/moodle.html') {
     res.writeHead(200, { 'content-type': 'text/html' })
       .end(readFileSync(path.join(root, 'tools/fixtures/moodle-quiz-review.html')));
+    return;
+  }
+
+  if (url.pathname === '/images.html') {
+    res.writeHead(200, { 'content-type': 'text/html' })
+      .end(readFileSync(path.join(root, 'tools/fixtures/image-questions.html')));
     return;
   }
 
@@ -158,12 +175,26 @@ const server = http.createServer((req, res) => {
       const body = JSON.parse(raw);
       seen.bodies.push(body);
 
+      const content = body.input[0].content;
+      const hasImages = Array.isArray(content) && content.some((p) => p.type === 'input_image');
+
+      // Simulates a model/gateway that rejects image content outright, so the
+      // client's caps.images fallback (retry as text) gets a real exercise.
+      if (mode === 'no-vision' && hasImages) {
+        res.writeHead(400, { 'content-type': 'application/json' }).end(JSON.stringify({
+          error: { message: 'This model does not support image inputs.', type: 'invalid_request_error', param: null, code: null },
+        }));
+        return;
+      }
+
       // In chunked mode, answer exactly the questions this chunk contains, so
       // the merge is tested against what was really sent.
       let answers = ANSWERS;
       if (mode === 'many') {
-        const numbers = [...body.input[0].content.matchAll(/^(\d+)\. Considering/gm)].map((m) => m[1]);
+        const numbers = [...content.matchAll(/^(\d+)\. Considering/gm)].map((m) => m[1]);
         answers = { questions: numbers.map((n) => ({ number: n, label: 'c', answer: `The third alternative for scenario ${n}, longer still to pad the page out.`, why: '', confidence: 'high' })) };
+      } else if (mode === 'images' || mode === 'no-vision') {
+        answers = IMAGE_ANSWERS;
       }
 
       res.writeHead(200, { 'content-type': 'application/json' }).end(JSON.stringify({
@@ -556,6 +587,88 @@ try {
   });
 
   await moodle.close();
+
+  /* ------------------------------------------------- a page with diagrams */
+
+  mode = 'images';
+  seen.bodies.length = 0;
+  const images = await context.newPage();
+  await images.goto(`${origin}/images.html`);
+  await images.waitForLoadState('domcontentloaded');
+  // The Q2 raster image is filled in by an inline script after parsing; make
+  // sure it has actually decoded before asking the extension to capture it.
+  await images.waitForFunction(() => {
+    const img = document.getElementById('graph');
+    return !!img && img.complete && img.naturalWidth > 0;
+  });
+  const imagesRun = await runJob(`${origin}/images.html`);
+
+  check('a page mixing image-only, image+text and text-only questions is read', () => {
+    assert.equal(imagesRun.record?.status, 'done', JSON.stringify(imagesRun.record?.error));
+    assert.equal(imagesRun.scan.questionCount, 4);
+  });
+
+  const imagesContent = seen.bodies[0]?.input?.[0]?.content;
+
+  check('the request sends the diagrams as real image content, not just text', () => {
+    assert.ok(Array.isArray(imagesContent), 'expected interleaved text/image parts');
+    const imageParts = imagesContent.filter((p) => p.type === 'input_image');
+    assert.equal(imageParts.length, 3, 'canvas, img and svg diagrams should all be captured; the tiny decorative icon should not be');
+    for (const part of imageParts) {
+      assert.equal(part.detail, 'high');
+      assert.match(part.image_url, /^data:image\/png;base64,/, 'same-origin canvas/img/svg capture should rasterize to a data URL');
+    }
+  });
+
+  check('images stay interleaved with the question text around them, not bundled separately', () => {
+    const texts = imagesContent.filter((p) => p.type === 'input_text').map((p) => p.text).join('\n---\n');
+    assert.match(texts, /Question 1/, 'text before the image-only question');
+    assert.match(texts, /peak value/, 'text around the image+text question');
+    assert.match(texts, /2 \+ 2/, 'the text-only question in between');
+    assert.match(texts, /shape is drawn below/, 'text around the svg question');
+  });
+
+  check('the answer key covers all four questions, including the image-only one', () => {
+    const byNumber = Object.fromEntries((imagesRun.record.answers || []).map((a) => [a.number, a]));
+    assert.equal(byNumber['1'].answer, '2.4 A', 'the image-only question must still get answered');
+    assert.equal(byNumber['2'].answer, '10');
+    assert.equal(byNumber['3'].answer, '4');
+    assert.equal(byNumber['4'].answer, 'Rectangle');
+  });
+
+  await images.close();
+
+  /* ------------------------------------ a model that rejects image input */
+
+  mode = 'no-vision';
+  seen.bodies.length = 0;
+  const noVision = await context.newPage();
+  await noVision.goto(`${origin}/images.html`);
+  await noVision.waitForLoadState('domcontentloaded');
+  await noVision.waitForFunction(() => {
+    const img = document.getElementById('graph');
+    return !!img && img.complete && img.naturalWidth > 0;
+  });
+  const noVisionRun = await runJob(`${origin}/images.html`);
+
+  check('a model without vision still answers, by retrying as text', () => {
+    assert.equal(noVisionRun.record?.status, 'done', JSON.stringify(noVisionRun.record?.error));
+    assert.equal(seen.bodies.length, 2, 'the first attempt with images should be rejected, then retried as text');
+  });
+
+  check('the retried request drops images instead of leaking raw tokens', () => {
+    const retried = seen.bodies.at(-1).input[0].content;
+    assert.equal(typeof retried, 'string', 'once images are off the request goes back to the plain-text shape');
+    assert.doesNotMatch(retried, /\[\[IMG/, 'the model must never see the internal token syntax');
+    assert.match(retried, /\[image omitted\]/);
+  });
+
+  check('the fallback answer sheet still covers the image-only question', () => {
+    const byNumber = Object.fromEntries((noVisionRun.record.answers || []).map((a) => [a.number, a]));
+    assert.ok(byNumber['1'], 'question 1 must not be dropped just because its image could not be sent');
+  });
+
+  await noVision.close();
 
   /* ------------------------------------ a quiz embedded from another origin */
 
