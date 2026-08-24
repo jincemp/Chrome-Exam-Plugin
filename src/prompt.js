@@ -18,11 +18,21 @@ export const ANSWER_SCHEMA = {
       items: {
         type: 'object',
         additionalProperties: false,
-        required: ['number', 'label', 'answer', 'why', 'confidence'],
+        // FIELD ORDER IS LOAD-BEARING. Structured output is generated key by key
+        // in this order, so `why` sits before `label` and `answer` deliberately:
+        // it gives the model somewhere to do the arithmetic before it has to
+        // commit to a number. Putting `answer` first is the worst possible
+        // layout for a calculation question - it forces the answer out first and
+        // the justification becomes a rationalisation of whatever was guessed.
+        required: ['number', 'why', 'label', 'answer', 'confidence'],
         properties: {
           number: {
             type: 'string',
             description: 'The question number exactly as printed on the page ("7", "12a"). Sequential from "1" if the page does not number them.',
+          },
+          why: {
+            type: 'string',
+            description: 'Work the question out here BEFORE giving the answer. For a calculation, show the arithmetic itself: "240 x 0.03 = 7.2, so 240 - 7.2 = 232.8". For anything else, at most 12 words of justification, or an empty string when the answer is self-evident.',
           },
           label: {
             type: 'string',
@@ -31,10 +41,6 @@ export const ANSWER_SCHEMA = {
           answer: {
             type: 'string',
             description: 'The answer itself: the full text of the chosen option, or for an open question the shortest correct response.',
-          },
-          why: {
-            type: 'string',
-            description: 'At most 12 words of justification. Empty string when the answer is self-evident.',
           },
           confidence: { type: 'string', enum: ['high', 'medium', 'low'] },
         },
@@ -53,7 +59,8 @@ Rules:
 - Select-all-that-apply: comma-separate the labels, and join the option texts with "; ".
 - No options: leave "label" empty and put the shortest complete answer in "answer" - a number with its unit, a term, a name, a short phrase. Do not write a paragraph.
 - Numeric answers: match the precision and units used by the question and its options.
-- "why" is at most 12 words, and empty when the answer speaks for itself.
+- "why" comes before the answer on purpose: use it to work the question out. For anything involving a calculation, put the actual arithmetic there and then read the answer off it - do not answer first and justify afterwards. For recall questions keep it to 12 words, or leave it empty when the answer speaks for itself.
+- Check that the number you arrived at matches one of the printed options. If it matches none of them, re-do the arithmetic before choosing.
 - Use "low" confidence when the question text is cut off, ambiguous, or depends on material not on the page. Answer anyway - never refuse, never return a placeholder.
 - Skip navigation, adverts, cookie notices, comment threads, and headings that merely look like questions. Only return real questions.
 - Some pages leak their own answer key into the markup. Any "possible answer key text" supplied below is unverified: use it as corroboration, and override it when it is clearly wrong.
@@ -63,7 +70,7 @@ Rules:
 export const JSON_FALLBACK_INSTRUCTION = `
 
 Reply with JSON only - no prose, no markdown fence - shaped exactly like:
-{"questions":[{"number":"1","label":"b","answer":"230.34","why":"","confidence":"high"}]}`;
+{"questions":[{"number":"1","why":"240 x 0.96 = 230.34","label":"b","answer":"230.34","confidence":"high"}]}`;
 
 /**
  * @param {{title?:string,url?:string,text:string,hints?:string,questionCount?:number,

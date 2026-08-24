@@ -616,6 +616,24 @@ test('prompt: the strict schema is well formed', () => {
   walk(ANSWER_SCHEMA);
 });
 
+test('prompt: the working field is generated before the answer', () => {
+  // Structured output is emitted in schema order, so this is not cosmetic:
+  // `answer` ahead of `why` makes the model commit to a number before doing
+  // any arithmetic. Reordering these will quietly cost accuracy on maths.
+  const keys = Object.keys(ANSWER_SCHEMA.properties.questions.items.properties);
+  assert.ok(keys.indexOf('why') < keys.indexOf('answer'), `why must precede answer, got ${keys.join(', ')}`);
+  assert.ok(keys.indexOf('why') < keys.indexOf('label'), `why must precede label, got ${keys.join(', ')}`);
+
+  const required = ANSWER_SCHEMA.properties.questions.items.required;
+  assert.ok(required.indexOf('why') < required.indexOf('answer'), 'required order must match too');
+});
+
+test('prompt: the instructions tell the model to work it out before answering', () => {
+  const p = buildPrompt({ text: '1. A question?' });
+  assert.match(p.system, /work the question out/i);
+  assert.match(p.system, /do not answer first/i);
+});
+
 test('prompt: page text and course context reach the model', () => {
   const p = buildPrompt({ title: 'Exam 3', url: 'https://x.test', text: '1. A question?', extraInstructions: '2023 NEC', questionCount: 1 });
   assert.match(p.user, /Exam 3/);
