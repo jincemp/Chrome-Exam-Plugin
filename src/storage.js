@@ -6,8 +6,13 @@
 
 export const DEFAULT_SETTINGS = {
   apiKey: '',
-  model: 'gpt-5.4-nano',
-  effort: 'low',                  // reasoning effort: none | low | medium | high
+  // gpt-5.6-luna at medium effort. Luna sits on the price-performance frontier
+  // where the mid tier does not: Luna at high matches gpt-5.6-terra at medium
+  // for about 70% of the cost. Effort is always sent explicitly - an unset
+  // field inherits a per-model default that has been `none` on some
+  // generations, which silently disables reasoning and looks like a cost win.
+  model: 'gpt-5.6-luna',
+  effort: 'medium',               // none | minimal | low | medium | high | xhigh | max
   baseUrl: 'https://api.openai.com/v1',
   endpoint: 'auto',               // auto | responses | chat
   showWhy: true,

@@ -113,7 +113,7 @@ const server = http.createServer((req, res) => {
 
   if (url.pathname === '/v1/models') {
     res.writeHead(200, { 'content-type': 'application/json' })
-      .end(JSON.stringify({ data: [{ id: 'gpt-5.4-nano' }, { id: 'gpt-5.4-mini' }] }));
+      .end(JSON.stringify({ data: [{ id: 'gpt-5.6-luna' }, { id: 'gpt-5.6-sol' }] }));
     return;
   }
 
@@ -137,7 +137,7 @@ const server = http.createServer((req, res) => {
     req.on('end', () => {
       seen.bodies.push(JSON.parse(raw));
       res.writeHead(200, { 'content-type': 'application/json' }).end(JSON.stringify({
-        id: 'chatcmpl_test', model: 'gpt-5.4-nano',
+        id: 'chatcmpl_test', model: 'gpt-5.6-luna',
         choices: [{ index: 0, finish_reason: 'stop', message: { role: 'assistant', content: JSON.stringify(ANSWERS) } }],
       }));
     });
@@ -160,7 +160,7 @@ const server = http.createServer((req, res) => {
       }
 
       res.writeHead(200, { 'content-type': 'application/json' }).end(JSON.stringify({
-        id: 'resp_test', status: 'completed', model: 'gpt-5.4-nano',
+        id: 'resp_test', status: 'completed', model: 'gpt-5.6-luna',
         output: [
           { type: 'reasoning', summary: [] },
           // A commentary message before the answer: the parser must skip it.
@@ -228,7 +228,7 @@ try {
   await driver.goto(`chrome-extension://${extensionId}/options/options.html`);
   await driver.evaluate(async (base) => {
     await chrome.storage.local.set({
-      apiKey: 'sk-test-key', model: 'gpt-5.4-nano', effort: 'low',
+      apiKey: 'sk-test-key', model: 'gpt-5.6-luna', effort: 'medium',
       baseUrl: base, endpoint: 'auto', showWhy: true, extraInstructions: '',
     });
   }, `${origin}/v1`);
@@ -282,12 +282,12 @@ try {
 
   check('the request uses the Responses shape', () => {
     assert.ok(body, 'no request reached the mock server');
-    assert.equal(body.model, 'gpt-5.4-nano');
+    assert.equal(body.model, 'gpt-5.6-luna');
     assert.equal(body.text.format.type, 'json_schema');
     assert.equal(body.text.format.name, 'answer_sheet', 'name must be flat, not wrapped in json_schema');
     assert.equal(body.text.format.strict, true);
     assert.equal(body.text.verbosity, 'low');
-    assert.equal(body.reasoning.effort, 'low');
+    assert.equal(body.reasoning.effort, 'medium');
     assert.equal(body.max_output_tokens > 0, true);
     assert.equal(body.store, false, 'exam text must not be retained');
     assert.equal('temperature' in body, false, 'gpt-5.x rejects temperature');
@@ -540,7 +540,7 @@ try {
     assert.equal(chatBody.response_format.type, 'json_schema');
     assert.equal(chatBody.response_format.json_schema.name, 'answer_sheet');
     assert.equal(chatBody.response_format.json_schema.strict, true);
-    assert.equal(chatBody.reasoning_effort, 'low', 'flat on chat completions');
+    assert.equal(chatBody.reasoning_effort, 'medium', 'flat on chat completions');
     assert.equal(chatBody.max_completion_tokens > 0, true);
     assert.equal('max_tokens' in chatBody, false);
     assert.equal('temperature' in chatBody, false);

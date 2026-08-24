@@ -27,20 +27,30 @@
 
         <label class="field">
           <span class="label">Model</span>
-          <input id="model" list="models" spellcheck="false" placeholder="gpt-4.1-mini" />
+          <input id="model" list="models" spellcheck="false" placeholder="gpt-5.6-luna" />
           <datalist id="models"></datalist>
-          <span class="hint" id="model-hint">Cheaper models are fine for straightforward recall questions.</span>
+          <span class="hint" id="model-hint">
+            The default is a good balance. If answers are wrong, raise <b>Thinking</b>
+            before reaching for a pricier model — it is usually the cheaper fix.
+          </span>
         </label>
 
         <label class="field">
           <span class="label">Thinking</span>
           <select id="effort">
-            <option value="none">None — fastest, cheapest</option>
-            <option value="low">Low — good default</option>
-            <option value="medium">Medium — for calculations</option>
-            <option value="high">High — slowest, most careful</option>
+            <option value="none">None — fastest and cheapest, but poor at maths</option>
+            <option value="low">Low — fine for recall questions</option>
+            <option value="medium">Medium — the default, handles calculations</option>
+            <option value="high">High — for a paper you keep getting wrong</option>
+            <option value="xhigh">Very high — much slower, much dearer</option>
+            <option value="max">Maximum — last resort, can time out</option>
           </select>
-          <span class="hint">Raise this for maths-heavy exams where the options are close together.</span>
+          <span class="hint">
+            How much working the model does before it answers. Going from None to
+            Low is the big jump; each step after that costs roughly three times
+            the previous one for a smaller gain. Start at Medium and only climb
+            if a particular paper keeps coming back wrong.
+          </span>
         </label>
 
         <label class="field">

@@ -237,7 +237,7 @@ export function buildChatBody(settings, prompt, caps) {
   return body;
 }
 
-const EFFORTS = new Set(['none', 'low', 'medium', 'high']);
+const EFFORTS = new Set(['none', 'minimal', 'low', 'medium', 'high', 'xhigh', 'max']);
 
 /** Guards against a stale or hand-edited value reaching the API. */
 const effortOf = (settings) => (EFFORTS.has(settings.effort) ? settings.effort : 'low');
@@ -246,7 +246,7 @@ const effortOf = (settings) => (EFFORTS.has(settings.effort) ? settings.effort :
 function maxTokensFor(settings) {
   const effort = effortOf(settings);
   if (!REASONING_RE.test(settings.model || '')) return 8000;
-  return effort === 'high' ? 32000 : effort === 'medium' ? 24000 : 16000;
+  return { max: 64000, xhigh: 48000, high: 32000, medium: 24000 }[effort] || 16000;
 }
 
 /* --------------------------------------------------------------- responses */

@@ -104,7 +104,9 @@ Two things worth knowing:
 - **Click an answer** to see a one-line reason for it. Turn this off in settings
   if you would rather keep the list bare.
 
-A `?` after an answer means the model was unsure. If the footer says *partly
+Clicking an answer shows the model's working, not just a verdict — for a
+calculation you get the arithmetic it actually did, which is the part worth
+checking. A `?` after an answer means the model was unsure. If the footer says *partly
 loaded*, the page only had some of its questions in the DOM when it was read —
 scroll to the bottom and press **Re-run**.
 
@@ -113,10 +115,27 @@ quit Chrome. Nothing is written to disk except your settings.
 
 ## Cost
 
-You pay OpenAI directly, per use. With the default model a page of questions
-costs a fraction of a cent — a dollar of credit covers thousands of questions.
-Larger models cost more and are rarely more accurate on straightforward recall
-questions.
+You pay OpenAI directly, per use. A page of about twenty questions costs
+roughly **a cent** on the default settings, so a few dollars of credit lasts a
+long time. The whole page goes in one request rather than one per question,
+which is most of why it is cheap.
+
+Two things move that number, in order of how much they matter:
+
+| | roughly, per page |
+| --- | --- |
+| Default: `gpt-5.6-luna`, Thinking **Medium** | 0.9¢ |
+| Same model, Thinking **Low** | 0.4¢ |
+| Same model, Thinking **High** | 1.5¢ |
+| `gpt-5.6-sol`, Thinking Medium | 15¢ |
+
+**Thinking is the dial worth touching first.** Going from None to Low is a
+large accuracy jump; each step above that costs about three times the previous
+one for a much smaller gain. A pricier model is rarely the cheaper fix.
+
+These are estimates, not a quote. Reasoning is billed as output and varies a
+lot per question — treat anything above Medium as unpredictable within a factor
+of two, and set a monthly cap on your OpenAI account.
 
 ## Share it with a friend
 
@@ -162,7 +181,7 @@ handful of friends, the zip is the pragmatic answer.
 | --- | --- |
 | **API key** | Your OpenAI key. Stored in this browser only. |
 | **Model** | Which model answers. The list is populated from your own account. |
-| **Thinking** | How hard the model works before answering. Raise it for calculation-heavy exams; lower it for speed. |
+| **Thinking** | How much working the model does before it answers. Raise it when a paper keeps coming back wrong; lower it for speed. See [Cost](#cost). |
 | **Extra instructions** | Sent with every request. Good for naming a code edition or syllabus, e.g. *"Answers should follow the 2023 NEC."* |
 | **Show reasoning** | Whether clicking an answer reveals a one-line justification. |
 | **API base URL** | Advanced. Point at an OpenAI-compatible proxy instead. |

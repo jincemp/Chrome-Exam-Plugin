@@ -16,7 +16,7 @@ const outDir = process.argv[2] || path.join(root, 'screenshots');
 mkdirSync(outDir, { recursive: true });
 
 const SETTINGS = {
-  apiKey: 'sk-test', model: 'gpt-5.4-nano', effort: 'low',
+  apiKey: 'sk-test', model: 'gpt-5.6-luna', effort: 'medium',
   baseUrl: 'https://api.openai.com/v1', endpoint: 'auto',
   showWhy: true, extraInstructions: '',
 };
@@ -65,9 +65,9 @@ const STATES = {
   'popup-setup': { settings: { ...SETTINGS, apiKey: '' }, job: null },
   'popup-idle': { settings: SETTINGS, job: null },
   'popup-busy': { settings: SETTINGS, job: { status: 'thinking', url: 'https://example.test/exam', progress: { done: 1, total: 3 } } },
-  'popup-answers': { settings: SETTINGS, job: { status: 'done', url: 'https://example.test/exam', answers: ANSWERS, meta: { model: 'gpt-5.4-nano', chunks: 1 } } },
-  'popup-many': { settings: SETTINGS, job: { status: 'done', url: 'https://example.test/exam', answers: MANY, meta: { model: 'gpt-5.4-nano', chunks: 4 } } },
-  'popup-partial': { settings: SETTINGS, job: { status: 'done', url: 'https://example.test/exam', answers: ANSWERS.slice(0, 3), meta: { model: 'gpt-5.4-nano', chunks: 4, missingChunks: 2, partialError: { message: 'OpenAI is rate limiting this key.', hint: 'Waiting a few seconds usually clears it.' }, windowed: true } } },
+  'popup-answers': { settings: SETTINGS, job: { status: 'done', url: 'https://example.test/exam', answers: ANSWERS, meta: { model: 'gpt-5.6-luna', chunks: 1 } } },
+  'popup-many': { settings: SETTINGS, job: { status: 'done', url: 'https://example.test/exam', answers: MANY, meta: { model: 'gpt-5.6-luna', chunks: 4 } } },
+  'popup-partial': { settings: SETTINGS, job: { status: 'done', url: 'https://example.test/exam', answers: ANSWERS.slice(0, 3), meta: { model: 'gpt-5.6-luna', chunks: 4, missingChunks: 2, partialError: { message: 'OpenAI is rate limiting this key.', hint: 'Waiting a few seconds usually clears it.' }, windowed: true } } },
   'popup-error': { settings: SETTINGS, job: { status: 'error', url: 'https://example.test/exam', error: { message: 'Your OpenAI account is out of credit.', hint: 'Add credit at platform.openai.com/settings/organization/billing.' } } },
   'popup-frames': { settings: SETTINGS, job: { status: 'error', url: 'https://example.test/exam', error: { message: 'The questions are inside an embedded frame.', hint: 'Chrome needs your permission to read it.', kind: 'frames', origins: ['https://quiz.example.com'] } } },
 };
