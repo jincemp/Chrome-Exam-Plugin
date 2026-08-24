@@ -283,6 +283,8 @@ popup does not cancel it.
 | `tools/test.mjs` | Unit tests, including the extractor against a real DOM |
 | `tools/e2e.mjs` | Loads the extension into Chromium against a mock OpenAI |
 | `tools/preview.mjs` | Screenshots every popup and options state |
+| `tools/inspect.mjs` | Shows what a saved page extracts to, for diagnosing a bad page |
+| `tools/fixtures/` | Real pages that once broke extraction, kept as regressions |
 
 ### Running the checks
 
@@ -297,6 +299,11 @@ npm run preview # writes screenshots/
 `npm run e2e` loads the extension into Chromium, points it at a local mock of
 the OpenAI API, and drives a real quiz page through the service worker — it is
 what catches the things unit tests cannot, like Chrome rejecting an API call.
+
+If a page comes back with the wrong questions, save it into `tools/fixtures/`
+and run `node tools/inspect.mjs tools/fixtures/your-page.html`. It prints the
+detected question count and the exact text the model would be sent, rendered in
+a real browser so hidden elements are genuinely hidden.
 
 ## Limitations
 

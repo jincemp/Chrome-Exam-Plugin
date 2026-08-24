@@ -37,13 +37,25 @@
   // Deliberately narrow. An earlier version accepted a bare "key", which matched
   // data-site-key and data-api-key and would have posted them to OpenAI.
   const HINT_ATTR_RE = /(^|[-_ ])((answer|solution)([-_ ]?key)?|correct|explanation|rationale)([-_ ]|$)/i;
+  // "1. What is ...?" - a number introducing text on the same line.
   const QUESTION_LINE_RE = /^\s*(?:q(?:uestion)?\s*[.:#-]?\s*)?(\d{1,3})\s*[.):\]]\s+\S/i;
+
+  // "Question 1" / "Q3." on a line of its own. The word is required, so a stray
+  // "9.00 out of 10.00" cannot be mistaken for one.
+  const QUESTION_HEADING_RE = /^\s*q(?:uestion)?\s*[.:#-]?\s*(\d{1,3})\s*[.):\]]?\s*$/i;
   const OPTION_LINE_RE = /^\s*[(\[]?([a-jA-J]|[ivxIVX]{1,4})[.):\]]\s+\S/;
 
   // Text a sighted reader cannot see is noise at best and a wrong answer at
   // worst, so it is dropped - including the screen-reader-only idioms that
   // computed style alone does not catch.
-  const SR_ONLY_RE = /(^|[\s-])(sr-only|visually-?hidden|screen-?reader-?(text|only)|a11y-hidden)([\s-]|$)/i;
+  const SR_ONLY_RE = /(^|[\s-])(sr-only|visually-?hidden|screen-?reader-?(text|only)|a11y-hidden|accesshide|hidden-accessible)([\s-]|$)/i;
+
+  /** Clipped to nothing is the other common way to hide text from sighted readers. */
+  const isClippedAway = (cs) => {
+    if (!cs) return false;
+    const clip = `${cs.clip} ${cs.clipPath}`;
+    return /rect\(\s*0(px)?[,\s]+0(px)?[,\s]+0(px)?[,\s]+0(px)?\s*\)/.test(clip) || /inset\(\s*50%\s*\)/.test(clip);
+  };
 
   // Anything not in this set puts its text on its own line. Keyed on computed
   // display rather than tag name, so a <span style="display:block"> option
@@ -67,6 +79,7 @@
       if (cls && SR_ONLY_RE.test(cls)) return false;
     } catch { /* exotic element */ }
     if (!cs) return true;
+    if (isClippedAway(cs)) return false;
     return cs.display !== 'none' && cs.visibility !== 'hidden' && cs.opacity !== '0';
   };
 
@@ -187,7 +200,9 @@
     .join('')
     .replace(/[ \t ]+/g, ' ')
     .replace(/ *\n */g, '\n')
-    .replace(/\n{3,}/g, '\n\n')
+    .replace(/\[selected\]\n+/g, '[selected] ')
+    .replace(/^\|$/gm, '')
+    .replace(/\n{2,}/g, '\n')
     .trim();
 
   const textOf = (root, opts) => {
@@ -313,9 +328,15 @@
     const optionAt = lines.map((l) => OPTION_LINE_RE.test(l));
     const numbers = new Set();
     let options = 0;
+    let headings = 0;
 
     for (let i = 0; i < lines.length; i++) {
       if (optionAt[i]) options++;
+
+      // An explicit heading needs no corroboration - the page said so itself.
+      const heading = QUESTION_HEADING_RE.exec(lines[i]);
+      if (heading) { numbers.add(heading[1]); headings++; continue; }
+
       const q = QUESTION_LINE_RE.exec(lines[i]);
       if (!q) continue;
 
@@ -329,13 +350,13 @@
     }
 
     // Options with no usable numbering at all: estimate from the option count.
-    if (numbers.size === 0 && options >= 2) return Math.max(1, Math.round(options / 4));
-    return numbers.size;
+    if (numbers.size === 0 && options >= 2) return { count: Math.max(1, Math.round(options / 4)), headings: 0 };
+    return { count: numbers.size, headings };
   };
 
   /** Some quizzes number nothing at all; the markup still gives them away. */
   const QUESTION_CONTAINER_SELECTOR =
-    '[data-question-id], [data-question], [class*="question" i], [id^="question" i]';
+    '[data-question-id], [data-question], [class*="question" i], [id^="question" i], div.que';
 
   const countFromStructure = () => {
     try {
@@ -346,9 +367,18 @@
       }
       const aria = document.querySelectorAll('[role="radiogroup"]').length;
 
-      // Question containers nest (a wrapper inside a wrapper); count the outermost.
-      const containers = [...document.querySelectorAll(QUESTION_CONTAINER_SELECTOR)]
-        .filter((el) => !el.parentElement?.closest(QUESTION_CONTAINER_SELECTOR));
+      // Question containers nest. Count the innermost: an outer match may be a
+      // single form or section wrapping the whole quiz, which collapses the
+      // count to one.
+      // Enough to exclude a bit of UI chrome that happens to have "question" in
+      // its class - Moodle's "Flag question" button - without excluding a real
+      // question stem, which is rarely this short.
+      const substantial = (el) => {
+        if (el.querySelector('input[type="radio"], select, [role="radio"], textarea')) return true;
+        return (el.textContent || '').trim().length >= 40;
+      };
+      const matches = [...document.querySelectorAll(QUESTION_CONTAINER_SELECTOR)].filter(substantial);
+      const containers = matches.filter((el) => !matches.some((other) => other !== el && el.contains(other)));
 
       return Math.max(groups.size, aria, containers.length);
     } catch {
@@ -356,7 +386,13 @@
     }
   };
 
-  const countQuestions = (text) => Math.max(countFromText(text), countFromStructure());
+  const countQuestions = (text) => {
+    const { count, headings } = countFromText(text);
+    // "Question 1 ... Question 10" is the page telling us outright; a structural
+    // guess can only make that worse.
+    if (headings > 0) return count;
+    return Math.max(count, countFromStructure());
+  };
 
   /* ------------------------------------------------------------- sub-frames */
 
@@ -434,7 +470,7 @@
   let text = textOf(root, { dropBoilerplate: true });
   // Stripping furniture occasionally strips the page. Only put it back when what
   // is left is both short and question-free.
-  if (text.length < 200 && countFromText(text) === 0 && document.body) {
+  if (text.length < 200 && countFromText(text).count === 0 && document.body) {
     text = textOf(document.body, { dropBoilerplate: false });
   }
 
@@ -456,7 +492,7 @@
     text,
     selection,
     hints: isTop ? collectHints() : '',
-    questionCount: selection ? countFromText(selection) : countQuestions(text),
+    questionCount: selection ? countFromText(selection).count : countQuestions(text),
     truncated,
   };
 })();

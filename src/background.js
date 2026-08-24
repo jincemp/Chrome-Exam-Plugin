@@ -212,7 +212,9 @@ async function readPage(tabId) {
 
 /* --------------------------------------------------------------- chunking */
 
-const QUESTION_START_RE = /^\s*(?:q(?:uestion)?\s*[.:#-]?\s*)?\d{1,3}\s*[.):\]]\s+\S/i;
+// Either "1. What is ...?" or a bare "Question 1" heading, which is how Moodle,
+// Canvas and most LMS themes label them.
+const QUESTION_START_RE = /^\s*(?:(?:q(?:uestion)?\s*[.:#-]?\s*)?\d{1,3}\s*[.):\]]\s+\S|q(?:uestion)?\s*[.:#-]?\s*\d{1,3}\s*[.):\]]?\s*$)/i;
 
 /** Split long pages on question boundaries so no question loses its options. */
 export function chunkText(text, maxChars = CHUNK_CHARS) {

@@ -101,6 +101,13 @@ const server = http.createServer((req, res) => {
 
   // Served on 127.0.0.1 but framing localhost - a different origin, and one the
   // extension has no permission for, exactly like a real embedded quiz.
+  // A real Moodle quiz review page, saved verbatim from the LMS that broke it.
+  if (url.pathname === '/moodle.html') {
+    res.writeHead(200, { 'content-type': 'text/html' })
+      .end(readFileSync(path.join(root, 'tools/fixtures/moodle-quiz-review.html')));
+    return;
+  }
+
   if (url.pathname === '/wrapper.html') {
     res.writeHead(200, { 'content-type': 'text/html' }).end(
       `<!doctype html><html><head><title>Course</title></head><body><main>
@@ -505,6 +512,50 @@ try {
   });
 
   await long.close();
+
+  /* -------------------------------------------------- a real Moodle quiz page */
+
+  mode = 'responses';
+  seen.bodies.length = 0;
+  const moodle = await context.newPage();
+  await moodle.goto(`${origin}/moodle.html`);
+  await moodle.waitForLoadState('domcontentloaded');
+  const moodleRun = await runJob(`${origin}/moodle.html`);
+  const moodleSent = seen.bodies[0]?.input?.[0]?.content || '';
+  const moodleText = moodleSent.split('--- PAGE TEXT ---')[1]?.split('--- POSSIBLE')[0] || '';
+
+  check('a Moodle quiz page is read, and its questions counted correctly', () => {
+    assert.equal(moodleRun.record?.status, 'done', JSON.stringify(moodleRun.record?.error));
+    assert.equal(moodleRun.scan.questionCount, 3, 'the page numbers its own questions; trust that');
+  });
+
+  check('Moodle question stems and options survive', () => {
+    assert.match(moodleText, /Categorise factors affecting urban water demand/);
+    assert.match(moodleText, /what percentage range typically represents water system leakage/);
+    assert.match(moodleText, /Leakage of 10-40% is typical/);
+    assert.match(moodleText, /Calculate the maximum daily consumption/);
+  });
+
+  check('a chosen option keeps its marker instead of being stranded', () => {
+    // The wording lives in a sibling block, which used to push "[selected]" onto
+    // a line of its own where it referred to nothing.
+    assert.match(moodleText, /\[selected\] Leakage of 10-40%/);
+  });
+
+  check("Moodle's screen-reader-only text is left out", () => {
+    // class="accesshide", clipped to a 1px box - invisible to a reader, and pure
+    // noise in the prompt.
+    assert.doesNotMatch(moodleText, /Question text/);
+    assert.doesNotMatch(moodleText, /Answer 1 Question 1/);
+  });
+
+  check('the page furniture around the quiz is left out', () => {
+    assert.doesNotMatch(moodleText, /Sustainability for Engineers/, 'the course list in the nav drawer');
+    assert.doesNotMatch(moodleText, /No private conversations/, 'the hidden message drawer');
+    assert.doesNotMatch(moodleText, /CRICOS Provider/, 'the footer');
+  });
+
+  await moodle.close();
 
   /* ------------------------------------ a quiz embedded from another origin */
 
