@@ -46,7 +46,7 @@ const { parseQuestions, relaxCaps, parseResponsesPayload, parseChatPayload, clas
         buildResponsesBody, buildChatBody, initialCaps } = await import('../src/openai.js');
 const { formatAnswer, formatAll, sortAnswers } = await import('../src/format.js');
 const { ANSWER_SCHEMA, buildPrompt } = await import('../src/prompt.js');
-const { DEFAULT_SETTINGS, isInsecureBase, pageKey } = await import('../src/storage.js');
+const { DEFAULT_SETTINGS, isInsecureBase, migrate, pageKey } = await import('../src/storage.js');
 
 /* ------------------------------------------------------- extractor harness */
 
@@ -707,6 +707,37 @@ test('body: the chat shape wraps the schema and nests nothing', () => {
 });
 
 /* ---------------------------------------------------------------- settings */
+
+test('settings: an install still on the old default pair is moved forward', () => {
+  const before = { model: 'gpt-5.4-nano', effort: 'low', showWhy: true, settingsVersion: 0 };
+  const after = migrate(before);
+  assert.equal(after.model, DEFAULT_SETTINGS.model);
+  assert.equal(after.effort, DEFAULT_SETTINGS.effort);
+  assert.equal(after.settingsVersion, DEFAULT_SETTINGS.settingsVersion);
+  assert.equal(before.model, 'gpt-5.4-nano', 'must not mutate the input');
+});
+
+test('settings: a model the user chose is never overwritten', () => {
+  const chosen = migrate({ model: 'gpt-5.6-sol', effort: 'low', settingsVersion: 0 });
+  assert.equal(chosen.model, 'gpt-5.6-sol');
+  assert.equal(chosen.effort, 'low');
+
+  // Old model but a deliberately changed effort: hands off both.
+  const partly = migrate({ model: 'gpt-5.4-nano', effort: 'high', settingsVersion: 0 });
+  assert.equal(partly.model, 'gpt-5.4-nano');
+  assert.equal(partly.effort, 'high');
+});
+
+test('settings: migration runs once, then leaves settings alone', () => {
+  const current = { model: 'gpt-5.4-nano', effort: 'low', settingsVersion: DEFAULT_SETTINGS.settingsVersion };
+  assert.equal(migrate(current), current, 'an already-migrated install is returned untouched');
+});
+
+test('settings: a fresh install needs no migration of its values', () => {
+  const fresh = migrate({ ...DEFAULT_SETTINGS, settingsVersion: 0 });
+  assert.equal(fresh.model, DEFAULT_SETTINGS.model);
+  assert.equal(fresh.effort, DEFAULT_SETTINGS.effort);
+});
 
 test('settings: a plain-http proxy is rejected, except on this machine', () => {
   assert.equal(isInsecureBase('http://proxy.example.com/v1'), true);

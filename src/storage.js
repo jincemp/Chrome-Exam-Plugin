@@ -4,6 +4,13 @@
  *   session - per-tab jobs and answers. In-memory only, gone when Chrome quits.
  */
 
+/**
+ * Bump when a stored setting needs rewriting on upgrade, and add the rule to
+ * migrate() below. Absent from storage means 0, i.e. an install from before
+ * migrations existed.
+ */
+const SETTINGS_VERSION = 1;
+
 export const DEFAULT_SETTINGS = {
   apiKey: '',
   // gpt-5.6-luna at medium effort. Luna sits on the price-performance frontier
@@ -17,11 +24,46 @@ export const DEFAULT_SETTINGS = {
   endpoint: 'auto',               // auto | responses | chat
   showWhy: true,
   extraInstructions: '',
+  settingsVersion: SETTINGS_VERSION,
 };
 
 export async function getSettings() {
-  const stored = await chrome.storage.local.get(DEFAULT_SETTINGS);
-  return { ...DEFAULT_SETTINGS, ...stored };
+  // Ask for version 0 rather than the current default, so an install that
+  // predates migrations reports 0 instead of looking already-migrated.
+  const stored = await chrome.storage.local.get({ ...DEFAULT_SETTINGS, settingsVersion: 0 });
+  const settings = { ...DEFAULT_SETTINGS, ...stored };
+
+  const upgraded = migrate(settings);
+  if (upgraded !== settings) {
+    try {
+      await chrome.storage.local.set(upgraded);
+    } catch { /* a failed write just means we try again next time */ }
+  }
+  return upgraded;
+}
+
+/**
+ * Settings are stored the moment the options page is closed, so a new default
+ * never reaches anyone who has already run the extension. Migrations move those
+ * installs forward; a value the user actually chose is always left alone.
+ *
+ * Returns the same object when there is nothing to do, so callers can tell.
+ */
+export function migrate(settings) {
+  if (settings.settingsVersion >= SETTINGS_VERSION) return settings;
+
+  const next = { ...settings, settingsVersion: SETTINGS_VERSION };
+
+  // v1: gpt-5.4-nano at low effort was the old default pair. It has no
+  // published multi-step maths benchmark, so nobody picked it on purpose -
+  // they just installed before the default changed. Only move an install that
+  // is still on BOTH old values; any deliberate change means hands off.
+  if (settings.model === 'gpt-5.4-nano' && settings.effort === 'low') {
+    next.model = DEFAULT_SETTINGS.model;
+    next.effort = DEFAULT_SETTINGS.effort;
+  }
+
+  return next;
 }
 
 export async function setSettings(patch) {

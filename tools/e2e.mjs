@@ -565,6 +565,55 @@ try {
   check('a failed run marks the toolbar', () => {
     assert.equal(failedBadge, '!');
   });
+
+  /* ------------------------------- upgrading an install that predates a default */
+
+  // By now the client has learned this base URL from the chat-only scenario and
+  // may still be using it, so read the effort from whichever shape it sent.
+  const effortSent = (body) => body.reasoning?.effort ?? body.reasoning_effort;
+
+  mode = 'responses';
+  seen.bodies.length = 0;
+
+  // Exactly what an install from before the default changed looks like: the old
+  // model and effort stored, and no settingsVersion at all.
+  await driver.evaluate(async (base) => {
+    await chrome.storage.local.clear();
+    await chrome.storage.local.set({
+      apiKey: 'sk-test-key', model: 'gpt-5.4-nano', effort: 'low',
+      baseUrl: base, endpoint: 'auto', showWhy: true, extraInstructions: '',
+    });
+  }, `${origin}/v1`);
+
+  const upgraded = await runJob();
+
+  check('an existing install picks up the new default instead of silently keeping the old one', () => {
+    assert.equal(upgraded.record?.status, 'done', JSON.stringify(upgraded.record?.error));
+    const body = seen.bodies.at(-1);
+    assert.equal(body.model, 'gpt-5.6-luna', 'stored settings must not pin the retired default');
+    assert.equal(effortSent(body), 'medium');
+  });
+
+  const persisted = await driver.evaluate(() => chrome.storage.local.get(null));
+
+  check('the upgrade is written once, so a later deliberate choice sticks', () => {
+    assert.equal(persisted.model, 'gpt-5.6-luna');
+    assert.equal(persisted.settingsVersion, 1);
+    assert.equal(persisted.apiKey, 'sk-test-key', 'migrating must not disturb the key');
+  });
+
+  // A model the user actually chose must survive the same path.
+  await driver.evaluate(async () => {
+    await chrome.storage.local.set({ model: 'gpt-5.6-sol', effort: 'high' });
+  });
+  seen.bodies.length = 0;
+  const chosen = await runJob();
+
+  check('a model the user chose is left alone', () => {
+    assert.equal(chosen.record?.status, 'done', JSON.stringify(chosen.record?.error));
+    assert.equal(seen.bodies.at(-1).model, 'gpt-5.6-sol');
+    assert.equal(effortSent(seen.bodies.at(-1)), 'high');
+  });
 } finally {
   await context.close();
   server.close();

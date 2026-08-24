@@ -161,9 +161,8 @@ To send the files:
 They will get their own copy with their own key and their own bill. Nothing is
 shared between you.
 
-Updates are manual: when the folder changes, send a new zip, and they replace
-their folder and click the refresh arrow on the extension's card in
-`chrome://extensions`.
+Updates are manual: send a new zip and have them follow *Updating to a new
+version* below.
 
 <details>
 <summary>What about the Chrome Web Store?</summary>
@@ -174,6 +173,19 @@ policy, and a review that takes days and can be rejected — an extension that
 reads page content and talks to a third-party API gets looked at closely. For a
 handful of friends, the zip is the pragmatic answer.
 </details>
+
+## Updating to a new version
+
+1. Download the ZIP again (green **Code** → **Download ZIP**) and unzip it.
+2. Replace your existing extension folder with the new one, **keeping it at the
+   same path** — Chrome loads it from wherever it sat before.
+3. Go to `chrome://extensions` and click the circular **refresh arrow** on the
+   Quiz Answers card.
+
+Your API key and settings survive an update; they live in the browser, not in
+the folder. If a new version ships a better default, the extension moves you
+onto it automatically — unless you had picked that setting yourself, in which
+case your choice is kept.
 
 ## Settings
 
