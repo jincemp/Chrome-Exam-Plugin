@@ -86,8 +86,18 @@
         <div class="actions">
           <button id="save" type="submit" class="primary">Save</button>
           <button id="test" type="button" class="ghost">Test key</button>
+          <button id="reset" type="button" class="ghost">Reset to defaults</button>
           <span id="status" class="status" role="status"></span>
         </div>
+
+        <p class="version">
+          Version <b id="version">—</b> · model <b id="active-model">—</b>
+          <span class="hint">
+            If this version is not the one you just installed, Chrome is still
+            loading the old folder. Check the path on the extension's card in
+            <code>chrome://extensions</code>.
+          </span>
+        </p>
       </form>
     </main>
     <script type="module" src="options.js"></script>

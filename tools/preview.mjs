@@ -43,6 +43,7 @@ function stub(state) {
     },
     tabs: { query: async () => [{ id: 1, url: 'https://example.test/exam' }] },
     runtime: {
+      getManifest: () => ({ version: '1.1.0' }),
       openOptionsPage() {},
       sendMessage: async () => state.scan || { ok: true, questionCount: 12 },
     },

@@ -187,12 +187,23 @@ the folder. If a new version ships a better default, the extension moves you
 onto it automatically — unless you had picked that setting yourself, in which
 case your choice is kept.
 
+**Check the update actually landed.** Open the extension's settings; the bottom
+line shows the version and the model in use. If that version is not the one you
+just downloaded, Chrome is still loading the old folder — look at the path on
+the extension's card in `chrome://extensions` and make sure it points at the
+folder you replaced. Unzipping usually creates a *new* folder next to the old
+one rather than replacing it.
+
+If the settings still look wrong, press **Reset to defaults**. It restores
+everything the current version ships with and keeps your API key.
+
 ## Settings
 
 | Setting | What it does |
 | --- | --- |
 | **API key** | Your OpenAI key. Stored in this browser only. |
 | **Model** | Which model answers. The list is populated from your own account. |
+| **Reset to defaults** | Puts back everything this version ships with, keeping your API key. |
 | **Thinking** | How much working the model does before it answers. Raise it when a paper keeps coming back wrong; lower it for speed. See [Cost](#cost). |
 | **Extra instructions** | Sent with every request. Good for naming a code edition or syllabus, e.g. *"Answers should follow the 2023 NEC."* |
 | **Show working** | Whether clicking an answer reveals how the model got there. |

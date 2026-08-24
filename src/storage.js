@@ -49,16 +49,22 @@ export async function getSettings() {
  *
  * Returns the same object when there is nothing to do, so callers can tell.
  */
+/**
+ * Models that were only ever the shipped default, never a choice. An install
+ * still on one of these was set up before the default moved, so it is carried
+ * forward. Anything else in the box is the user's own decision and is kept.
+ */
+const SUPERSEDED_DEFAULT_MODELS = new Set(['gpt-4.1-mini', 'gpt-5.4-nano']);
+
 export function migrate(settings) {
   if (settings.settingsVersion >= SETTINGS_VERSION) return settings;
 
   const next = { ...settings, settingsVersion: SETTINGS_VERSION };
 
-  // v1: gpt-5.4-nano at low effort was the old default pair. It has no
-  // published multi-step maths benchmark, so nobody picked it on purpose -
-  // they just installed before the default changed. Only move an install that
-  // is still on BOTH old values; any deliberate change means hands off.
-  if (settings.model === 'gpt-5.4-nano' && settings.effort === 'low') {
+  // Keyed on the model alone. An earlier version also required the effort to
+  // still be the old default, which meant anyone who had touched that one
+  // dropdown stayed pinned to a model that is retired or unevidenced.
+  if (SUPERSEDED_DEFAULT_MODELS.has(settings.model)) {
     next.model = DEFAULT_SETTINGS.model;
     next.effort = DEFAULT_SETTINGS.effort;
   }

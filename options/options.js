@@ -35,8 +35,19 @@ function readForm() {
   };
 }
 
+/** Shows which build is loaded, so a failed update is visible rather than silent. */
+function showVersion(settings) {
+  try {
+    $('version').textContent = chrome.runtime.getManifest().version;
+  } catch {
+    $('version').textContent = 'unknown';
+  }
+  $('active-model').textContent = settings.model;
+}
+
 async function load() {
   const s = await getSettings();
+  showVersion(s);
   $('apiKey').value = s.apiKey;
   $('model').value = s.model;
   $('effort').value = s.effort;
@@ -58,6 +69,22 @@ async function refreshModels(settings) {
   if (chat.length) fillModels(chat);
   return chat;
 }
+
+// An escape hatch that does not depend on a migration having fired: put the
+// shipped settings back, keeping the key so nobody has to paste it again.
+$('reset').addEventListener('click', async () => {
+  const { apiKey } = readForm();
+  const fresh = { ...DEFAULT_SETTINGS, apiKey };
+  await setSettings(fresh);
+  $('model').value = fresh.model;
+  $('effort').value = fresh.effort;
+  $('endpoint').value = fresh.endpoint;
+  $('baseUrl').value = fresh.baseUrl;
+  $('showWhy').checked = fresh.showWhy;
+  $('extraInstructions').value = fresh.extraInstructions;
+  showVersion(fresh);
+  setStatus(`Reset. Model is now ${fresh.model}.`, 'ok');
+});
 
 $('reveal').addEventListener('click', () => {
   const input = $('apiKey');
@@ -82,6 +109,7 @@ $('form').addEventListener('submit', async (event) => {
   }
 
   await setSettings(values);
+  showVersion(values);
   setStatus('Saved.', 'ok');
   if (values.apiKey) refreshModels(values).catch(() => {});
 });

@@ -720,12 +720,20 @@ test('settings: an install still on the old default pair is moved forward', () =
 test('settings: a model the user chose is never overwritten', () => {
   const chosen = migrate({ model: 'gpt-5.6-sol', effort: 'low', settingsVersion: 0 });
   assert.equal(chosen.model, 'gpt-5.6-sol');
-  assert.equal(chosen.effort, 'low');
+  assert.equal(chosen.effort, 'low', 'their effort is theirs too');
+});
 
-  // Old model but a deliberately changed effort: hands off both.
+test('settings: a superseded default moves even if the effort was changed', () => {
+  // The migration keys on the model alone. Requiring the effort to match as
+  // well left anyone who had touched that dropdown stuck on the old model.
   const partly = migrate({ model: 'gpt-5.4-nano', effort: 'high', settingsVersion: 0 });
-  assert.equal(partly.model, 'gpt-5.4-nano');
-  assert.equal(partly.effort, 'high');
+  assert.equal(partly.model, DEFAULT_SETTINGS.model);
+});
+
+test('settings: an install on the retired gpt-4.1-mini default is rescued', () => {
+  // That ID 404s now, so leaving it would mean every run fails.
+  const old = migrate({ model: 'gpt-4.1-mini', settingsVersion: 0 });
+  assert.equal(old.model, DEFAULT_SETTINGS.model);
 });
 
 test('settings: migration runs once, then leaves settings alone', () => {

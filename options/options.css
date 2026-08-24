@@ -85,5 +85,15 @@ button {
 button:disabled { opacity: 0.6; cursor: default; }
 
 .status { font-size: 13px; color: var(--muted); }
+
+.version {
+  margin: 26px 0 0;
+  padding-top: 14px;
+  border-top: 1px solid var(--line);
+  color: var(--muted);
+  font-size: 12px;
+}
+.version b { color: var(--fg); font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-weight: 600; }
+.version .hint { margin-top: 4px; }
 .status.ok { color: var(--ok); }
 .status.bad { color: var(--danger); }

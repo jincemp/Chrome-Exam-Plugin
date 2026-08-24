@@ -566,6 +566,28 @@ try {
     assert.equal(failedBadge, '!');
   });
 
+  /* ----------------------------------------- the settings page tells you what it is */
+
+  const optionsPage = await context.newPage();
+  await optionsPage.goto(`chrome-extension://${extensionId}/options/options.html`);
+  await optionsPage.waitForFunction(() => document.getElementById('version').textContent !== '—', { timeout: 10000 });
+  const shown = await optionsPage.evaluate(() => ({
+    version: document.getElementById('version').textContent,
+    model: document.getElementById('active-model').textContent,
+    manifest: chrome.runtime.getManifest().version,
+  }));
+  await optionsPage.close();
+
+  check('settings shows the loaded version, so a failed update is visible', () => {
+    assert.equal(shown.version, shown.manifest);
+    assert.match(shown.version, /^\d+\.\d+\.\d+$/);
+    assert.notEqual(shown.version, '—');
+  });
+
+  check('settings shows which model is actually in use', () => {
+    assert.equal(shown.model, 'gpt-5.6-luna');
+  });
+
   /* ------------------------------- upgrading an install that predates a default */
 
   // By now the client has learned this base URL from the chat-only scenario and
