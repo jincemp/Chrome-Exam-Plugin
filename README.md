@@ -101,8 +101,8 @@ Two things worth knowing:
 
 - **Select text first** to limit the extension to part of a page. If anything is
   selected when you click **Get answers**, only that selection is sent.
-- **Click an answer** to see a one-line reason for it. Turn this off in settings
-  if you would rather keep the list bare.
+- **Click an answer** to see the model's working. Turn this off in settings if
+  you would rather keep the list bare.
 
 Clicking an answer shows the model's working, not just a verdict — for a
 calculation you get the arithmetic it actually did, which is the part worth
@@ -183,7 +183,7 @@ handful of friends, the zip is the pragmatic answer.
 | **Model** | Which model answers. The list is populated from your own account. |
 | **Thinking** | How much working the model does before it answers. Raise it when a paper keeps coming back wrong; lower it for speed. See [Cost](#cost). |
 | **Extra instructions** | Sent with every request. Good for naming a code edition or syllabus, e.g. *"Answers should follow the 2023 NEC."* |
-| **Show reasoning** | Whether clicking an answer reveals a one-line justification. |
+| **Show working** | Whether clicking an answer reveals how the model got there. |
 | **API base URL** | Advanced. Point at an OpenAI-compatible proxy instead. |
 | **Endpoint** | Advanced. `/responses`, `/chat/completions`, or auto-detect. |
 
