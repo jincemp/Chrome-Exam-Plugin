@@ -1,9 +1,18 @@
 #!/usr/bin/env python3
 """Generate the extension's PNG icons with no third-party dependencies.
 
-Two sets are produced:
-  icons/icon{16,32,48,128}.png       idle  - indigo card with a multiple-choice list
-  icons/icon-done{16,32,48,128}.png  ready - green card with a checkmark
+Two sets are produced, both grey line art on a transparent background:
+  icons/icon{16,32,48,128}.png       idle  - an answer list
+  icons/icon-done{16,32,48,128}.png  ready - a checkmark
+
+Nothing is filled behind the mark, so the icon sits on whatever the browser's
+toolbar happens to be. That rules out a coloured state signal, so idle and ready
+differ by shape - and the badge carries the count on top.
+
+The ink is one mid grey deliberately: Chrome does not re-tint extension icons
+for dark mode, so a single value has to clear ~3.5:1 against both a white
+toolbar and Chrome's dark one (#292a2d). Darker greys read better on white and
+vanish on dark; this one is close to the balance point for the two.
 
 Rendering is done by supersampled signed-distance evaluation, so the shapes come
 out smooth at every size. Run with:  python3 tools/make_icons.py
@@ -16,15 +25,9 @@ import zlib
 
 SS = 4  # supersampling factor per axis
 
+INK = (0x7E, 0x84, 0x8C)  # 3.8:1 on a white toolbar, 3.8:1 on Chrome's dark one
+
 # ---------------------------------------------------------------- primitives
-
-
-def rounded_rect_sd(px, py, cx, cy, hw, hh, r):
-    """Signed distance to a rounded rectangle (negative inside)."""
-    dx = abs(px - cx) - (hw - r)
-    dy = abs(py - cy) - (hh - r)
-    ox, oy = max(dx, 0.0), max(dy, 0.0)
-    return math.hypot(ox, oy) + min(max(dx, dy), 0.0) - r
 
 
 def segment_sd(px, py, ax, ay, bx, by, half_w):
@@ -45,83 +48,49 @@ def coverage(sd, feather):
     return max(0.0, min(1.0, 0.5 - sd / feather))
 
 
-def over(dst, src, alpha):
-    """Source-over composite of an opaque colour onto an opaque background."""
-    return tuple(int(round(s * alpha + d * (1 - alpha))) for s, d in zip(src, dst))
-
-
 # ---------------------------------------------------------------- the artwork
 
 
-def shade(t, top, bottom):
-    """Vertical linear gradient between two RGB colours."""
-    return tuple(int(round(a + (b - a) * t)) for a, b in zip(top, bottom))
-
-
-def sample(u, v, done):
-    """Colour + alpha for the unit-square point (u, v). Returns (rgb, alpha)."""
-    feather = 1.0 / (64.0 * SS) * 6  # ~1.5 device px of softness at any size
-
+def sample(u, v, done, feather):
+    """Alpha for the unit-square point (u, v). The colour is INK throughout."""
     if done:
-        top, bottom = (0x1F, 0xB2, 0x6B), (0x0E, 0x8C, 0x52)
-    else:
-        top, bottom = (0x5B, 0x63, 0xF5), (0x3B, 0x3F, 0xC7)
+        # A checkmark: in from the left, down to the low point, up to the right.
+        # Drawn a touch heavier than the list's bars - one lone diagonal on an
+        # empty canvas reads lighter than three stacked rows at the same weight.
+        a = coverage(segment_sd(u, v, 0.155, 0.520, 0.395, 0.775, 0.080), feather)
+        b = coverage(segment_sd(u, v, 0.395, 0.775, 0.855, 0.235, 0.080), feather)
+        return max(a, b)
 
-    bg_sd = rounded_rect_sd(u, v, 0.5, 0.5, 0.5, 0.5, 0.235)
-    bg_a = coverage(bg_sd, feather)
-    if bg_a <= 0.0:
-        return (0, 0, 0), 0.0
-
-    rgb = shade(v, top, bottom)
-    ink = (0xFF, 0xFF, 0xFF)
-
-    if done:
-        # A bold checkmark.
-        a = coverage(segment_sd(u, v, 0.265, 0.520, 0.435, 0.685, 0.072), feather)
-        b = coverage(segment_sd(u, v, 0.435, 0.685, 0.740, 0.330, 0.072), feather)
-        mark = max(a, b)
-    else:
-        # Three answer rows; the middle one is "selected".
-        mark = 0.0
-        rows = ((0.300, 0.760), (0.500, 0.800), (0.700, 0.640))
-        for i, (y, right) in enumerate(rows):
-            bullet_r = 0.070 if i == 1 else 0.058
-            bullet = coverage(circle_sd(u, v, 0.255, y, bullet_r), feather)
-            if i != 1:
-                ring = coverage(circle_sd(u, v, 0.255, y, bullet_r - 0.030), feather)
-                bullet = max(0.0, bullet - ring)
-            bar = coverage(segment_sd(u, v, 0.395, y, right, y, 0.052), feather)
-            mark = max(mark, bullet, bar)
-
-    if mark > 0.0:
-        rgb = over(rgb, ink, mark)
-
-    return rgb, bg_a
+    # Three answer rows. Without a card behind them these run nearly edge to
+    # edge; at 16px that is the difference between a list and a grey smudge.
+    mark = 0.0
+    for y, right in ((0.220, 0.820), (0.500, 0.860), (0.780, 0.700)):
+        dot = coverage(circle_sd(u, v, 0.165, y, 0.078), feather)
+        bar = coverage(segment_sd(u, v, 0.395, y, right, y, 0.062), feather)
+        mark = max(mark, dot, bar)
+    return mark
 
 
 def render(size, done):
     """Render one icon as raw RGBA bytes."""
+    # Roughly one device pixel of edge softness whatever the size. A fixed
+    # fraction of the canvas instead would blur the 128px icon and leave the
+    # 16px one ragged.
+    feather = 1.15 / size
     rows = []
     inv = 1.0 / (size * SS)
     weight = 1.0 / (SS * SS)
     for y in range(size):
         row = bytearray()
         for x in range(size):
-            r = g = b = a = 0.0
+            a = 0.0
             for sy in range(SS):
                 v = (y * SS + sy + 0.5) * inv
                 for sx in range(SS):
                     u = (x * SS + sx + 0.5) * inv
-                    (cr, cg, cb), ca = sample(u, v, done)
-                    r += cr * ca
-                    g += cg * ca
-                    b += cb * ca
-                    a += ca
-            r, g, b, a = r * weight, g * weight, b * weight, a * weight
-            if a > 0.0:  # un-premultiply
-                row += bytes((int(round(r / a)), int(round(g / a)), int(round(b / a))))
-            else:
-                row += b"\x00\x00\x00"
+                    a += sample(u, v, done, feather)
+            a *= weight
+            row += bytes(INK)
             row.append(int(round(a * 255)))
         rows.append(bytes(row))
     return rows

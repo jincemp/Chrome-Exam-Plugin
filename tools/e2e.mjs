@@ -414,30 +414,67 @@ try {
   });
   console.log(`note setIcon path: ${iconProbe.path}`);
 
-  // Confirms the "ready" icon really is the green tick, not the idle one.
-  const iconColours = await worker.evaluate(async () => {
-    const average = async (file) => {
+  // The icons are grey line art on nothing. There is no colour left to tell the
+  // two states apart, so what has to hold instead is: the ink stays neutral,
+  // stays mid-grey (one value has to survive both a white and a dark toolbar),
+  // the background stays transparent, and the two shapes still differ.
+  const iconInk = await worker.evaluate(async () => {
+    const measure = async (file) => {
       const blob = await (await fetch(chrome.runtime.getURL(file))).blob();
       const bitmap = await createImageBitmap(blob);
       const canvas = new OffscreenCanvas(bitmap.width, bitmap.height);
       const ctx = canvas.getContext('2d');
       ctx.drawImage(bitmap, 0, 0);
       const { data } = ctx.getImageData(0, 0, canvas.width, canvas.height);
-      let r = 0, g = 0, b = 0, n = 0;
+      let r = 0, g = 0, b = 0, inked = 0;
+      const alpha = new Uint8Array(data.length / 4);
       for (let i = 0; i < data.length; i += 4) {
-        if (data[i + 3] < 200) continue;      // ignore the rounded corners
-        if (data[i] > 240 && data[i + 1] > 240 && data[i + 2] > 240) continue; // ignore the white mark
-        r += data[i]; g += data[i + 1]; b += data[i + 2]; n++;
+        alpha[i / 4] = data[i + 3];
+        if (data[i + 3] < 200) continue;       // the transparent background
+        r += data[i]; g += data[i + 1]; b += data[i + 2]; inked++;
       }
-      return { r: r / n, g: g / n, b: b / n, n };
+      return { r: r / inked, g: g / inked, b: b / inked, inked, pixels: alpha.length, alpha };
     };
-    return { idle: await average('icons/icon48.png'), done: await average('icons/icon-done48.png') };
+
+    const idle = await measure('icons/icon48.png');
+    const done = await measure('icons/icon-done48.png');
+    let differing = 0;
+    for (let i = 0; i < idle.alpha.length; i++) {
+      if (Math.abs(idle.alpha[i] - done.alpha[i]) > 128) differing++;
+    }
+    delete idle.alpha;
+    delete done.alpha;
+    return { idle, done, differing };
   });
 
-  check('the ready icon is the green tick and the idle icon is not', () => {
-    assert.ok(iconColours.done.g > iconColours.done.r * 1.5, `done icon is not green: ${JSON.stringify(iconColours.done)}`);
-    assert.ok(iconColours.done.g > iconColours.done.b * 1.5, `done icon is not green: ${JSON.stringify(iconColours.done)}`);
-    assert.ok(iconColours.idle.b > iconColours.idle.g * 1.5, `idle icon is not indigo: ${JSON.stringify(iconColours.idle)}`);
+  const bothIcons = Object.entries({ idle: iconInk.idle, done: iconInk.done });
+
+  check('both icons are neutral grey, not tinted', () => {
+    for (const [name, ink] of bothIcons) {
+      const spread = Math.max(ink.r, ink.g, ink.b) - Math.min(ink.r, ink.g, ink.b);
+      assert.ok(spread < 25, `${name} icon is tinted rather than grey: ${JSON.stringify(ink)}`);
+    }
+  });
+
+  check('the ink is mid grey, so it shows up on a light and a dark toolbar', () => {
+    // Chrome does not re-tint extension icons per theme, so one value has to do
+    // both. Near-black vanishes on dark, near-white vanishes on light.
+    for (const [name, ink] of bothIcons) {
+      assert.ok(ink.g > 90 && ink.g < 190, `${name} ink would disappear on one theme: ${JSON.stringify(ink)}`);
+    }
+  });
+
+  check('the icons are line art on a transparent background, not a filled card', () => {
+    for (const [name, ink] of bothIcons) {
+      const covered = ink.inked / ink.pixels;
+      assert.ok(covered > 0.04, `${name} icon is nearly blank: ${(covered * 100).toFixed(1)}% inked`);
+      assert.ok(covered < 0.5, `${name} icon fills its canvas - the background is back: ${(covered * 100).toFixed(1)}% inked`);
+    }
+  });
+
+  check('the two states still look different, now that colour no longer says so', () => {
+    const share = iconInk.differing / iconInk.idle.pixels;
+    assert.ok(share > 0.08, `idle and ready icons are nearly identical: ${(share * 100).toFixed(1)}% of pixels differ`);
   });
 
   check('the service worker can set the icon at all', () => {

@@ -49,7 +49,7 @@ about a missing manifest, you have probably picked the outer folder of two with
 similar names — open it and pick the inner one, the one with a file called
 `manifest.json` sitting directly inside.
 
-**Quiz Answers** now appears in the list with its blue icon.
+**Quiz Answers** now appears in the list with its grey list icon.
 
 ### 4. Pin it to the toolbar
 
@@ -95,7 +95,7 @@ it useless.
 1. Open a page with questions on it.
 2. Click the extension icon. The popup shows **Get answers**, and underneath it
    how many questions were detected.
-3. Click it. The icon turns into a green tick with the number of answers once
+3. Click it. The icon turns into a tick with the number of answers once
    they are ready — you can close the popup and carry on reading while it works.
 4. Click the icon again to see the answer key.
 
