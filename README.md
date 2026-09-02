@@ -16,49 +16,162 @@ still gets answered.
 
 ---
 
+**New here? Read these three, in order:**
+
+1. [Install it on your Mac](#install-it-on-your-mac) — about five minutes.
+2. [Get an OpenAI API key](#get-an-openai-api-key) — another five. Nothing works
+   without this.
+3. [Use it](#use-it) — the part you actually came for.
+
+**Already installed?** [Updating to a new version](#updating-to-a-new-version)
+is the section you want. [Settings](#settings), [Cost](#cost) and
+[Troubleshooting](#troubleshooting) are further down, and
+[Share it with a friend](#share-it-with-a-friend) covers passing it on.
+
+---
+
 ## Install it on your Mac
 
-You do not need any developer tools, and you do not need to know what any of
-this does. It takes about two minutes.
+You do not need any developer tools, you do not need to type a single command,
+and you do not need to understand any of what the extension does internally.
 
-### 1. Download the files
+**Before you start, know these three things:**
 
-Open [the project page](https://github.com/jincemp/Chrome-Exam-Plugin) in
-Chrome, click the green **Code** button, and choose **Download ZIP**.
+- It takes about five minutes, plus another five for the OpenAI key.
+- There is no Web Store listing, so you install it from a folder on your
+  computer. Chrome calls this an "unpacked" extension. It is a normal, supported
+  way to install something — it just means you look after the folder yourself.
+- **Where you put that folder matters, and you cannot casually move it later.**
+  Step 2 explains why. Getting this right now saves you real annoyance later.
 
-Your Mac saves a `.zip` to **Downloads**. Double-click it to unzip. You now have
-a folder called `Chrome-Exam-Plugin-main`.
+Windows instead of a Mac? The steps are identical apart from the file handling —
+see [the Windows notes](#installing-on-windows) at the end of this section.
 
-### 2. Move the folder somewhere permanent
+### Step 1 — Download the files
 
-**This matters.** Chrome loads the extension from wherever this folder sits,
-every time you start it. If the folder is in Downloads and you tidy Downloads
-out later, the extension stops working.
+1. Open [the project page](https://github.com/jincemp/Chrome-Exam-Plugin) in
+   Chrome.
+2. Click the green **Code** button, near the top-right of the file list.
+3. Choose **Download ZIP** from the menu that drops down.
 
-Drag it somewhere you will not touch — a folder in **Documents** is fine.
+Chrome saves a file called `Chrome-Exam-Plugin-main.zip` into your **Downloads**
+folder. Depending on your settings it may appear in a download bar at the bottom
+of the window, or in the downloads tray next to the address bar.
 
-### 3. Load it into Chrome
+> **You should now have:** a file named `Chrome-Exam-Plugin-main.zip` in
+> Downloads.
 
-1. In Chrome's address bar, type `chrome://extensions` and press Return.
-2. Turn on **Developer mode** — the switch in the top-right corner.
-3. Click **Load unpacked** (top-left).
-4. Select the folder you just moved, and click **Select**.
+### Step 2 — Unzip it, and put the folder somewhere permanent
 
-You are picking the folder itself, not any file inside it. If Chrome complains
-about a missing manifest, you have probably picked the outer folder of two with
-similar names — open it and pick the inner one, the one with a file called
-`manifest.json` sitting directly inside.
+Double-click the `.zip`. macOS unzips it beside itself, leaving a folder called
+`Chrome-Exam-Plugin-main` in Downloads. (You can throw the `.zip` away now — you
+only need the folder.)
 
-**Quiz Answers** now appears in the list with its grey list icon.
+**Now move that folder somewhere you will not touch again.** This is the step
+people get wrong, and here is why it matters:
 
-### 4. Pin it to the toolbar
+Chrome does not copy the extension into itself. It reads it from this folder,
+from scratch, every single time you start Chrome. So:
 
-Click the puzzle-piece icon at the right of Chrome's address bar, then the pin
-next to **Quiz Answers**. Its icon now sits in the toolbar, ready to click.
+- If you leave it in **Downloads** and later clear Downloads out, the extension
+  breaks.
+- If you **move or rename** the folder afterwards, Chrome loses track of it, and
+  it forgets your API key along with it. (Chrome identifies an unpacked
+  extension by the folder's exact location, so a new location looks like a
+  completely different extension to it.)
 
-Chrome may ask at some point whether to keep extensions loaded this way. Say
-yes — this is normal for an extension you installed yourself rather than from
-the Web Store.
+So pick a home for it now and leave it there. A folder inside **Documents** is
+ideal. For example, make `Documents/Chrome Extensions/` and drag the
+`Chrome-Exam-Plugin-main` folder into it.
+
+> **You should now have:** a folder at something like
+> `Documents/Chrome Extensions/Chrome-Exam-Plugin-main`, and inside it a file
+> called `manifest.json` sitting alongside folders named `src`, `popup`,
+> `options`, and `icons`.
+
+That `manifest.json` check is worth doing. Open the folder and look. If instead
+you see a *single* folder inside with the same sort of name, you have a folder
+wrapped inside another folder — open the inner one, and treat *that* as your
+extension folder from here on.
+
+### Step 3 — Turn on Developer mode in Chrome
+
+1. Click Chrome's address bar, type `chrome://extensions`, and press Return.
+   (This is a Chrome settings page, not a website. Typing it is normal.)
+2. Find the **Developer mode** switch in the **top-right** corner of that page,
+   and turn it on.
+
+Three buttons — **Load unpacked**, **Pack extension**, **Update** — appear along
+the top-left. That is how you know it worked.
+
+Developer mode sounds alarming and is not. It only means "let me install
+extensions from folders on this computer as well as from the Web Store."
+
+> **You should now see:** a **Load unpacked** button at the top-left of the
+> page.
+
+### Step 4 — Load the extension
+
+1. Click **Load unpacked**.
+2. A file picker opens. Navigate to the folder from Step 2.
+3. **Select the folder itself — do not open it and pick a file inside.** Click
+   it once so it is highlighted, then click **Select**.
+
+> **You should now see:** a card in the list titled **Quiz Answers**, with a
+> version number, and a grey list icon.
+
+**If Chrome shows an error instead**, it is almost always one of two things:
+
+- *"Manifest file is missing or unreadable"* — you picked the wrong folder.
+  Click **Load unpacked** again and pick the folder that has `manifest.json`
+  directly inside it (see the check at the end of Step 2).
+- *"Could not load extension"* with a file path — the download did not unzip
+  fully. Delete the folder, download the ZIP again, and redo Step 2.
+
+### Step 5 — Pin it to the toolbar
+
+By default Chrome tucks new extensions out of sight.
+
+1. Click the **puzzle-piece icon** to the right of the address bar.
+2. Find **Quiz Answers** in the list that drops down.
+3. Click the **pin icon** next to it, so the pin turns blue.
+
+> **You should now see:** the grey icon sitting permanently in your toolbar,
+> next to the address bar. Clicking it opens the extension.
+
+### Step 6 — Add your OpenAI key
+
+The extension cannot answer anything yet — it needs a key of your own. Click the
+icon and it will tell you so, with an **Open settings** button.
+
+Follow [Get an OpenAI API key](#get-an-openai-api-key) below, then come back and
+[use it](#use-it).
+
+### A warning Chrome will show you
+
+Every so often — usually after a restart — Chrome pops up a bubble saying
+**"Disable developer mode extensions"** or asking whether to keep them.
+
+**Keep them / dismiss it.** Chrome shows this for *any* extension installed from
+a folder rather than the Web Store. It is not a warning about this extension
+specifically, and nothing is wrong. If you click the button that disables them,
+Quiz Answers stops working until you go back to `chrome://extensions` and switch
+it on again.
+
+<h3 id="installing-on-windows">Installing on Windows</h3>
+
+Same process, three differences:
+
+- **Unzipping:** right-click the downloaded `.zip` → **Extract All…** →
+  **Extract**. Windows often produces a folder inside a folder here, so the
+  `manifest.json` check at the end of Step 2 matters more than it does on a Mac.
+- **Where to put it:** anywhere permanent, e.g.
+  `C:\Users\<you>\Documents\Chrome Extensions\`. Not the Downloads folder.
+- **Picking the folder in Step 4:** the picker's button says **Select Folder**
+  rather than **Select**.
+
+Everything else — Developer mode, Load unpacked, pinning, updating — is
+identical.
 
 ## Get an OpenAI API key
 
@@ -70,25 +183,62 @@ you use — fractions of a cent per page.
 you nothing here; API usage is billed separately. This catches almost everyone
 out.
 
-1. Go to [platform.openai.com](https://platform.openai.com) and sign in, or
-   create an account.
-2. Add a payment method and buy some credit — the minimum top-up is a few
-   dollars and will last you thousands of questions.
-   *Settings → Billing → Add payment details.*
-3. While you are there, set a spending cap so nothing can run away with your
-   money. *Settings → Limits → set a monthly budget.*
-4. Go to **API keys** in the left sidebar and click **Create new secret key**.
-   Give it a name like "quiz extension" and create it.
-5. **Copy the key immediately.** It starts with `sk-` and OpenAI shows it to you
-   exactly once. If you lose it, delete it and make another — no harm done.
-6. Click the extension icon in Chrome → **Open settings** → paste the key into
-   the box → **Save**.
-7. Click **Test key**. It should say "Key works." If it does not, the message
-   tells you what is wrong.
+### Step 1 — Make an OpenAI account
 
-Treat the key like a password. Anyone who has it can spend your money. If it
-ever leaks, go back to that API keys page and delete it — that instantly makes
-it useless.
+Go to [platform.openai.com](https://platform.openai.com) and sign in, or create
+an account. This is the developer side of OpenAI, and it is separate from
+chatgpt.com even if you sign in with the same email.
+
+### Step 2 — Put a few dollars of credit on it
+
+*Settings → Billing → Add payment details.*
+
+The minimum top-up is a few dollars and will last you thousands of questions.
+Without credit, every request fails with "out of credit" — a key on its own is
+not enough.
+
+### Step 3 — Set a spending cap, while you are there
+
+*Settings → Limits → set a monthly budget.*
+
+Not required, but do it anyway. It puts a hard ceiling on what this can ever
+cost you, whatever happens.
+
+### Step 4 — Create the key
+
+1. Click **API keys** in the left sidebar.
+2. Click **Create new secret key**.
+3. Give it a name you will recognise later, like `quiz extension`, and create it.
+4. **Copy it straight away.** It is a long string starting with `sk-`, and
+   OpenAI shows it to you *exactly once* — close that box without copying and
+   it is gone for good.
+
+Lost it? No harm done: delete that key on the same page and create another.
+
+> **You should now have:** a long `sk-…` string on your clipboard.
+
+### Step 5 — Paste it into the extension
+
+1. Click the Quiz Answers icon in your toolbar.
+2. Click **Open settings**.
+3. Paste the key into the **OpenAI API key** box. (It shows as dots; click
+   **Show** if you want to check it pasted properly.)
+4. Click **Save**.
+5. Click **Test key**.
+
+> **You should see:** a message confirming the key works, and the **Model**
+> dropdown filling up with the models your account can use.
+
+If instead it reports an error, the message says which of the four things above
+went wrong — most often no credit on the account, or a key that was truncated
+when it was copied.
+
+### Keep the key to yourself
+
+Treat it like a password. Anyone who has it can spend your money, and there is
+no way to cap what someone else runs on it. If it ever leaks, go back to the API
+keys page and delete it — that instantly makes it useless, and costs you nothing
+but the minute it takes to make a new one.
 
 ## Use it
 
@@ -123,6 +273,114 @@ falling back to any text description the page provides for it.
 
 Answers are kept until you reload the page, navigate that tab elsewhere, or
 quit Chrome. Nothing is written to disk except your settings.
+
+## Updating to a new version
+
+There is no automatic update — nothing tells you a new version exists, and
+nothing installs it for you. When you want the latest, you fetch it yourself.
+
+**The one rule that matters:** the new files must end up in the **same folder,
+at the same path**, as the old ones. Chrome recognises an unpacked extension by
+where it lives. Same place, and your API key and settings carry straight over.
+Different place, and Chrome treats it as a brand-new extension: you get a second
+copy in the list and an empty settings page.
+
+The trap is that unzipping does **not** replace the old folder. It quietly makes
+a *second* folder next to it, and Chrome keeps happily loading the old one. That
+is why an update can look like it did nothing.
+
+### Step 1 — Check which version you have now
+
+Click the extension icon → **Settings** (or **Open settings**). At the very
+bottom of that page is a line like:
+
+```
+1.5.1 · model gpt-5.6-luna
+```
+
+Write that version number down. It is how you will know the update landed.
+
+### Step 2 — Find out exactly where Chrome loads it from
+
+1. Go to `chrome://extensions`.
+2. Find the **Quiz Answers** card and click **Details**.
+3. Look for the folder path — it looks something like
+   `/Users/you/Documents/Chrome Extensions/Chrome-Exam-Plugin-main`.
+
+That path is your target. The new files have to end up exactly there.
+
+### Step 3 — Download the new version
+
+Green **Code** button → **Download ZIP**, exactly as during installation.
+Double-click the `.zip` to unzip it. You now have a fresh
+`Chrome-Exam-Plugin-main` folder sitting in **Downloads**.
+
+### Step 4 — Put the new folder where the old one was
+
+This is the step to do carefully. In Finder:
+
+1. Go to the folder from Step 2 — the one Chrome loads from.
+2. **Move the old `Chrome-Exam-Plugin-main` folder to the Trash.** (Your API key
+   is not in there. It lives in Chrome, and it survives this.)
+3. Drag the **new** `Chrome-Exam-Plugin-main` folder from Downloads into that
+   same place, so it sits exactly where the old one was.
+
+The result must be a folder at the *same* path as Step 2, containing the new
+files. Do not rename it — the name is part of the path.
+
+> **If macOS offers to "Keep Both", you have done it in the wrong order.** That
+> prompt means the old folder is still there, and choosing Keep Both leaves you
+> with `Chrome-Exam-Plugin-main` (old, still the one Chrome loads) and
+> `Chrome-Exam-Plugin-main 2` (new, ignored). Cancel, delete the old folder
+> first, then move the new one in. **Replace** is also fine if you are offered
+> it — just never Keep Both.
+
+### Step 5 — Tell Chrome to re-read it
+
+1. Go back to `chrome://extensions`.
+2. On the **Quiz Answers** card, click the circular **refresh arrow** (⟳) in the
+   bottom-right of the card.
+
+Nothing dramatic happens on screen. That is fine.
+
+### Step 6 — Confirm it actually updated
+
+Open the extension's settings again and look at that bottom line. **The version
+number should have changed** from what you noted in Step 1.
+
+If it has, you are done. Your key, model, and thinking level are all as you left
+them.
+
+### If the version number did not change
+
+Chrome is still reading the old folder. Work through these in order:
+
+1. **Did you refresh?** Step 5, the ⟳ arrow on the card. Reloading the web page,
+   or even restarting Chrome, does not always pick up new files on its own.
+2. **Is there a duplicate folder?** Look in Downloads and wherever you keep the
+   extension for a second folder with a name like
+   `Chrome-Exam-Plugin-main 2`, or a folder inside a folder. Chrome may be
+   loading a different one than you think. Compare against the path in Step 2 —
+   that path is the only one Chrome cares about.
+3. **Is the path still right?** Go back to Step 2 and re-read the path on the
+   card. If Chrome shows an error like "Could not load extension" there, the
+   folder it wants is missing or was renamed.
+4. **Start clean.** Remove the extension (**Remove** on its card), then
+   **Load unpacked** and pick the new folder. Reload the path *exactly* as
+   before and your settings come back with it; pick a different location and you
+   will need to paste your API key in again — which is a two-minute nuisance,
+   not a disaster.
+
+### If the settings look wrong after an update
+
+Open settings and press **Reset to defaults**. It puts back everything the
+current version ships with and **keeps your API key**. Useful if a setting from
+an older version is stuck.
+
+When a new version ships a better default — a newer model, say — the extension
+moves you onto it automatically on the next run. The exception is a setting you
+chose yourself: if you deliberately picked a model, your choice is kept and
+never overwritten.
 
 ## Cost
 
@@ -170,14 +428,17 @@ To send the files:
    **Not Gmail as an attachment** — Gmail looks inside zip files, sees the
    `.js` files an extension is made of, and refuses to send it. A Drive link
    works fine.
-3. Tell them to follow *Install it on your Mac* from step 2 onwards, then
-   *Get an OpenAI API key*.
+3. Tell them to follow [Install it on your Mac](#install-it-on-your-mac) from
+   **Step 2** onwards — they already have the files, so they skip the download —
+   and then [Get an OpenAI API key](#get-an-openai-api-key).
 
 They will get their own copy with their own key and their own bill. Nothing is
 shared between you.
 
-Updates are manual: send a new zip and have them follow *Updating to a new
-version* below.
+Updates are manual for them too: send a new zip, and have them follow
+[Updating to a new version](#updating-to-a-new-version), skipping Step 3
+since the zip is the download. Stress the part about the new folder having to
+replace the old one *in the same place* — that is the step everyone trips over.
 
 <details>
 <summary>What about the Chrome Web Store?</summary>
@@ -188,29 +449,6 @@ policy, and a review that takes days and can be rejected — an extension that
 reads page content and talks to a third-party API gets looked at closely. For a
 handful of friends, the zip is the pragmatic answer.
 </details>
-
-## Updating to a new version
-
-1. Download the ZIP again (green **Code** → **Download ZIP**) and unzip it.
-2. Replace your existing extension folder with the new one, **keeping it at the
-   same path** — Chrome loads it from wherever it sat before.
-3. Go to `chrome://extensions` and click the circular **refresh arrow** on the
-   Quiz Answers card.
-
-Your API key and settings survive an update; they live in the browser, not in
-the folder. If a new version ships a better default, the extension moves you
-onto it automatically — unless you had picked that setting yourself, in which
-case your choice is kept.
-
-**Check the update actually landed.** Open the extension's settings; the bottom
-line shows the version and the model in use. If that version is not the one you
-just downloaded, Chrome is still loading the old folder — look at the path on
-the extension's card in `chrome://extensions` and make sure it points at the
-folder you replaced. Unzipping usually creates a *new* folder next to the old
-one rather than replacing it.
-
-If the settings still look wrong, press **Reset to defaults**. It restores
-everything the current version ships with and keeps your API key.
 
 ## Settings
 
