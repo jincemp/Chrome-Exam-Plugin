@@ -1,12 +1,13 @@
+/*
+ * Monochrome on purpose. There is no accent and no red: emphasis is carried by
+ * weight and position instead, so the popup stays as quiet as the toolbar icon.
+ */
 :root {
   color-scheme: light dark;
   --bg: #ffffff;
   --fg: #14161a;
   --muted: #6b7280;
   --line: #e5e7eb;
-  --accent: #4f46e5;
-  --accent-fg: #ffffff;
-  --danger: #b42318;
   --row-hover: #f6f7f9;
 }
 
@@ -16,9 +17,6 @@
     --fg: #f2f3f5;
     --muted: #9aa1ab;
     --line: #2e3238;
-    --accent: #6366f1;
-    --accent-fg: #ffffff;
-    --danger: #f97066;
     --row-hover: #24272c;
   }
 }
@@ -41,21 +39,38 @@ body {
 
 .lead { margin: 2px 0 10px; color: var(--muted); }
 
+/*
+ * The primary action, as text rather than a filled block. It outranks .link-btn
+ * by weight and by using the full foreground colour - that is the whole
+ * hierarchy now that there is no accent to lean on.
+ */
 .cta {
-  width: 100%;
-  padding: 9px 12px;
+  display: inline-block;
+  width: auto;
+  padding: 2px 0;
   border: 0;
-  border-radius: 8px;
-  background: var(--accent);
-  color: var(--accent-fg);
+  background: none;
+  color: var(--fg);
   font: inherit;
   font-weight: 600;
+  text-align: left;
   cursor: pointer;
+  overflow-wrap: anywhere;
 }
-.cta:hover { filter: brightness(1.07); }
-.cta:active { filter: brightness(0.95); }
-.cta:disabled { opacity: 0.6; cursor: default; }
-.cta { overflow-wrap: anywhere; }
+.cta:hover { text-decoration: underline; }
+.cta:active { opacity: 0.7; }
+.cta:disabled { opacity: 0.5; cursor: default; text-decoration: none; }
+
+/*
+ * The popup focuses this on open so Enter runs it, which means the ring shows
+ * every time it is opened. A hairline at a distance says "Enter does this"
+ * without reading as a box drawn around the words.
+ */
+.cta:focus-visible {
+  outline: 1px solid var(--muted);
+  outline-offset: 3px;
+  border-radius: 2px;
+}
 
 .note {
   margin: 8px 2px 0;
@@ -65,7 +80,7 @@ body {
 }
 
 #grant { margin: 12px 0 10px; }
-.error { margin: 2px 2px 8px; color: var(--danger); }
+.error { margin: 2px 2px 8px; font-weight: 600; }
 
 .link-btn {
   padding: 2px 0;
@@ -86,7 +101,7 @@ body {
   width: 13px;
   height: 13px;
   border: 2px solid var(--line);
-  border-top-color: var(--accent);
+  border-top-color: var(--fg);
   border-radius: 50%;
   animation: spin 0.7s linear infinite;
 }
@@ -118,7 +133,6 @@ body {
 
 .q { flex: none; color: var(--muted); font-variant-numeric: tabular-nums; }
 .a { font-weight: 600; overflow-wrap: anywhere; }
-.a .opt { color: var(--accent); }
 
 .low { opacity: 0.75; }
 .low .a::after {
@@ -139,7 +153,6 @@ body {
   margin: 8px 2px 0;
   padding-top: 8px;
   border-top: 1px solid var(--line);
-  color: var(--danger);
   font-size: 12px;
 }
 .partial[hidden] { display: none; }

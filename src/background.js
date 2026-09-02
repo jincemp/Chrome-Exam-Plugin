@@ -25,9 +25,9 @@ const running = new Map();
 
 /* ------------------------------------------------------------ tab chrome */
 
-// Grey to match the icon: the toolbar stays quiet on a normal run. Its white
-// digits clear 4.9:1 here, where the green this replaced managed only 3.3:1.
-// Failures keep their red below - that is the one time colour is doing a job.
+// Grey to match the icon, for every state including failure: nothing the
+// extension shows uses colour any more. A failed run is told apart by its "!"
+// rather than by turning red. White digits on this clear 4.9:1.
 async function setBadge(tabId, { text = '', color = '#6c7178' } = {}) {
   try {
     await chrome.action.setBadgeText({ tabId, text });
@@ -94,7 +94,7 @@ async function markIdle(tabId) {
 
 async function markFailed(tabId) {
   await setIcon(tabId, false);
-  await setBadge(tabId, { text: '!', color: '#b42318' });
+  await setBadge(tabId, { text: '!' });
 }
 
 /* -------------------------------------------------------------- page read */

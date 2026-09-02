@@ -844,6 +844,39 @@ await test('settings: the page key ignores the fragment but not the path', async
   assert.notEqual(pageKey('https://x.test/exam/2'), pageKey('https://x.test/exam'));
 });
 
+/* -------------------------------------------------------------- appearance */
+
+/** #abc and #aabbcc -> [r, g, b]. Ignores any alpha suffix. */
+function channels(hex) {
+  const h = hex.slice(1);
+  const full = h.length === 3 || h.length === 4 ? [...h.slice(0, 3)].map((c) => c + c).join('') : h.slice(0, 6);
+  return [0, 2, 4].map((i) => parseInt(full.slice(i, i + 2), 16));
+}
+
+await test('appearance: the UI stays monochrome', async () => {
+  // The extension is deliberately colourless - grey icon, grey badge, grey UI.
+  // Accents have crept back in more than once, so this fails the build rather
+  // than waiting for someone to notice a blue button. Every grey the design
+  // uses is within ~21 of neutral; every colour removed was over 100.
+  for (const file of ['popup/popup.css', 'options/options.css']) {
+    const css = readFileSync(path.join(root, file), 'utf8');
+    for (const hex of css.match(/#[0-9a-fA-F]{3,8}\b/g) || []) {
+      const [r, g, b] = channels(hex);
+      const spread = Math.max(r, g, b) - Math.min(r, g, b);
+      assert.ok(spread < 30, `${file} has a colour, not a grey: ${hex} (channels differ by ${spread})`);
+    }
+  }
+});
+
+await test('appearance: the badge the service worker sets is grey too', async () => {
+  const src = readFileSync(path.join(root, 'src/background.js'), 'utf8');
+  for (const hex of src.match(/#[0-9a-fA-F]{6}\b/g) || []) {
+    const [r, g, b] = channels(hex);
+    const spread = Math.max(r, g, b) - Math.min(r, g, b);
+    assert.ok(spread < 30, `src/background.js sets a coloured badge: ${hex}`);
+  }
+});
+
 /* ------------------------------------------------------------------ report */
 
 for (const [name, err] of failures) {

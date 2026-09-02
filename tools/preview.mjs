@@ -15,6 +15,9 @@ const root = path.dirname(path.dirname(fileURLToPath(import.meta.url)));
 const outDir = process.argv[2] || path.join(root, 'screenshots');
 mkdirSync(outDir, { recursive: true });
 
+/** Read from the real manifest, so a preview never shows a stale version. */
+const MANIFEST_VERSION = JSON.parse(readFileSync(path.join(root, 'manifest.json'), 'utf8')).version;
+
 const SETTINGS = {
   apiKey: 'sk-test', model: 'gpt-5.6-luna', effort: 'medium',
   baseUrl: 'https://api.openai.com/v1', endpoint: 'auto',
@@ -43,7 +46,7 @@ function stub(state) {
     },
     tabs: { query: async () => [{ id: 1, url: 'https://example.test/exam' }] },
     runtime: {
-      getManifest: () => ({ version: '1.3.0' }),
+      getManifest: () => ({ version: state.version }),
       openOptionsPage() {},
       sendMessage: async () => state.scan || { ok: true, questionCount: 12 },
     },
@@ -98,7 +101,7 @@ for (const scheme of ['light', 'dark']) {
   for (const [name, state] of Object.entries(STATES)) {
     const context = await browser.newContext({ viewport: { width: 300, height: 520 }, colorScheme: scheme, deviceScaleFactor: 2 });
     const page = await context.newPage();
-    await page.addInitScript(stub, state);
+    await page.addInitScript(stub, { ...state, version: MANIFEST_VERSION });
     page.on('pageerror', (e) => console.error(`  ${name}: ${e.message}`));
     await page.goto(`${origin}/popup/popup.html`);
     await page.waitForTimeout(350);
@@ -110,7 +113,7 @@ for (const scheme of ['light', 'dark']) {
 
   const context = await browser.newContext({ viewport: { width: 720, height: 900 }, colorScheme: scheme, deviceScaleFactor: 2 });
   const page = await context.newPage();
-  await page.addInitScript(stub, { settings: SETTINGS, job: null });
+  await page.addInitScript(stub, { settings: SETTINGS, job: null, version: MANIFEST_VERSION });
   page.on('pageerror', (e) => console.error(`  options: ${e.message}`));
   await page.goto(`${origin}/options/options.html`);
   await page.waitForTimeout(350);

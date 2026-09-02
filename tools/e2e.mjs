@@ -780,11 +780,9 @@ try {
     assert.equal(failedBadge.text, '!');
   });
 
-  check('a failure is the one thing still allowed to be coloured', () => {
-    // Everything else went grey on purpose. This did not: a run that failed is
-    // exactly when the toolbar should not be quiet about it.
+  check('even a failure stays grey - nothing the extension shows is coloured', () => {
     const [r, g, b] = failedBadge.colour;
-    assert.ok(r > g * 1.8 && r > b * 1.8, `the error badge is no longer red: rgb(${r}, ${g}, ${b})`);
+    assert.ok(Math.max(r, g, b) - Math.min(r, g, b) < 25, `the error badge is tinted: rgb(${r}, ${g}, ${b})`);
   });
 
   /* ----------------------------------------- the settings page tells you what it is */

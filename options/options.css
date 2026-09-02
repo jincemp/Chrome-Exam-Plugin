@@ -5,9 +5,9 @@
   --muted: #6b7280;
   --line: #e0e3e8;
   --field: #ffffff;
-  --accent: #4f46e5;
-  --ok: #15803d;
-  --danger: #b42318;
+  /* The one solid fill left, for the primary action. Neutral, not an accent. */
+  --solid: #14161a;
+  --solid-fg: #ffffff;
 }
 
 @media (prefers-color-scheme: dark) {
@@ -17,9 +17,8 @@
     --muted: #9aa1ab;
     --line: #31353c;
     --field: #1f2227;
-    --accent: #6366f1;
-    --ok: #4ade80;
-    --danger: #f97066;
+    --solid: #f2f3f5;
+    --solid-fg: #17191d;
   }
 }
 
@@ -52,7 +51,7 @@ input, textarea, select {
   color: var(--fg);
   font: inherit;
 }
-input:focus, textarea:focus, select:focus { outline: 2px solid var(--accent); outline-offset: -1px; border-color: transparent; }
+input:focus, textarea:focus, select:focus { outline: 2px solid var(--fg); outline-offset: -1px; border-color: transparent; }
 textarea { display: block; resize: vertical; }
 
 .key-row { display: flex; gap: 8px; }
@@ -62,11 +61,12 @@ textarea { display: block; resize: vertical; }
 #model-custom[hidden] { display: none; }
 
 .hint { display: block; margin-top: 6px; color: var(--muted); font-size: 12px; }
-.hint a { color: var(--accent); }
+.hint a { color: var(--fg); text-decoration: underline; }
 .hint code { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 11px; }
 
 .check { display: flex; align-items: center; gap: 8px; margin-bottom: 20px; }
-.check input { width: auto; }
+/* accent-color, or the tick renders in the browser's blue. */
+.check input { width: auto; accent-color: var(--fg); }
 
 .advanced { margin-bottom: 22px; }
 .advanced summary { cursor: pointer; color: var(--muted); font-size: 13px; }
@@ -81,8 +81,8 @@ button {
   font-weight: 600;
   cursor: pointer;
 }
-.primary { border: 0; background: var(--accent); color: #fff; }
-.primary:hover { filter: brightness(1.07); }
+.primary { border: 0; background: var(--solid); color: var(--solid-fg); }
+.primary:hover { opacity: 0.85; }
 .ghost { border: 1px solid var(--line); background: transparent; color: var(--fg); }
 .ghost:hover { border-color: var(--muted); }
 button:disabled { opacity: 0.6; cursor: default; }
@@ -98,5 +98,5 @@ button:disabled { opacity: 0.6; cursor: default; }
 }
 .version b { color: var(--fg); font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-weight: 600; }
 .version .hint { margin-top: 4px; }
-.status.ok { color: var(--ok); }
-.status.bad { color: var(--danger); }
+.status.ok { color: var(--fg); }
+.status.bad { color: var(--fg); font-weight: 600; }
