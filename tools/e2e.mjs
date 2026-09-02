@@ -381,11 +381,21 @@ try {
 
   const badge = await driver.evaluate(async (quizUrl) => {
     const [tab] = await chrome.tabs.query({ url: quizUrl });
-    return chrome.action.getBadgeText({ tabId: tab.id });
+    return {
+      text: await chrome.action.getBadgeText({ tabId: tab.id }),
+      colour: await chrome.action.getBadgeBackgroundColor({ tabId: tab.id }),
+    };
   }, `${origin}/quiz.html`);
 
   check('the toolbar badge shows the answer count', () => {
-    assert.equal(badge, '3');
+    assert.equal(badge.text, '3');
+  });
+
+  check('a normal run leaves the toolbar grey, not coloured', () => {
+    // The icon is grey line art; a bright pill next to it puts the colour
+    // straight back. Failures are the exception - see the error badge below.
+    const [r, g, b] = badge.colour;
+    assert.ok(Math.max(r, g, b) - Math.min(r, g, b) < 25, `the ready badge is tinted: rgb(${r}, ${g}, ${b})`);
   });
 
   // Informational: does the path form of setIcon work from a service worker on
@@ -760,11 +770,21 @@ try {
 
   const failedBadge = await driver.evaluate(async (quizUrl) => {
     const [tab] = await chrome.tabs.query({ url: quizUrl });
-    return chrome.action.getBadgeText({ tabId: tab.id });
+    return {
+      text: await chrome.action.getBadgeText({ tabId: tab.id }),
+      colour: await chrome.action.getBadgeBackgroundColor({ tabId: tab.id }),
+    };
   }, `${origin}/quiz.html`);
 
   check('a failed run marks the toolbar', () => {
-    assert.equal(failedBadge, '!');
+    assert.equal(failedBadge.text, '!');
+  });
+
+  check('a failure is the one thing still allowed to be coloured', () => {
+    // Everything else went grey on purpose. This did not: a run that failed is
+    // exactly when the toolbar should not be quiet about it.
+    const [r, g, b] = failedBadge.colour;
+    assert.ok(r > g * 1.8 && r > b * 1.8, `the error badge is no longer red: rgb(${r}, ${g}, ${b})`);
   });
 
   /* ----------------------------------------- the settings page tells you what it is */

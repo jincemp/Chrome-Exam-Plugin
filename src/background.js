@@ -25,7 +25,10 @@ const running = new Map();
 
 /* ------------------------------------------------------------ tab chrome */
 
-async function setBadge(tabId, { text = '', color = '#16a34a' } = {}) {
+// Grey to match the icon: the toolbar stays quiet on a normal run. Its white
+// digits clear 4.9:1 here, where the green this replaced managed only 3.3:1.
+// Failures keep their red below - that is the one time colour is doing a job.
+async function setBadge(tabId, { text = '', color = '#6c7178' } = {}) {
   try {
     await chrome.action.setBadgeText({ tabId, text });
     if (text) {
