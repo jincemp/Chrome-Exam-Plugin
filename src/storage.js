@@ -9,7 +9,7 @@
  * migrate() below. Absent from storage means 0, i.e. an install from before
  * migrations existed.
  */
-const SETTINGS_VERSION = 1;
+const SETTINGS_VERSION = 2;
 
 export const DEFAULT_SETTINGS = {
   apiKey: '',
@@ -19,7 +19,10 @@ export const DEFAULT_SETTINGS = {
   // field inherits a per-model default that has been `none` on some
   // generations, which silently disables reasoning and looks like a cost win.
   model: 'gpt-5.6-luna',
-  effort: 'medium',               // none | minimal | low | medium | high | xhigh | max
+  // High rather than medium. Reasoning is where accuracy on calculation
+  // questions comes from, and stepping up one level is a far cheaper fix than
+  // a pricier model - roughly 1.5x a page, against 15x for the tier above.
+  effort: 'high',                 // none | minimal | low | medium | high | xhigh | max
   baseUrl: 'https://api.openai.com/v1',
   endpoint: 'auto',               // auto | responses | chat
   showWhy: true,
@@ -56,6 +59,14 @@ export async function getSettings() {
  */
 const SUPERSEDED_DEFAULT_MODELS = new Set(['gpt-4.1-mini', 'gpt-5.4-nano']);
 
+/**
+ * The effort v1 shipped as its default, and nothing else. "low" is deliberately
+ * absent: it was the default back at v0, but a v1 install sitting on it chose
+ * it, and moving someone off a level they picked to save money - onto one that
+ * costs roughly three times as much - is not an upgrade.
+ */
+const SUPERSEDED_DEFAULT_EFFORTS = new Set(['medium']);
+
 export function migrate(settings) {
   if (settings.settingsVersion >= SETTINGS_VERSION) return settings;
 
@@ -66,6 +77,12 @@ export function migrate(settings) {
   // dropdown stayed pinned to a model that is retired or unevidenced.
   if (SUPERSEDED_DEFAULT_MODELS.has(settings.model)) {
     next.model = DEFAULT_SETTINGS.model;
+    next.effort = DEFAULT_SETTINGS.effort;
+  }
+
+  // v1 -> v2: the shipped effort went medium -> high. Only move an install that
+  // is still on a level this project once shipped as its default.
+  if (settings.settingsVersion < 2 && SUPERSEDED_DEFAULT_EFFORTS.has(next.effort)) {
     next.effort = DEFAULT_SETTINGS.effort;
   }
 

@@ -112,7 +112,9 @@
   /* ------------------------------------------------------------------ images */
 
   const MAX_IMAGES = 8;         // per frame - keeps payload and cost bounded
-  const MAX_IMAGE_DIM = 1024;   // longest side, in CSS pixels, after downscaling
+  // Sized to what a high-detail image is actually read at - see rasterize().
+  const TARGET_IMAGE_SHORT = 768;  // the side that carries the detail
+  const MAX_IMAGE_LONG = 2048;     // beyond this the API scales it back down anyway
   const MIN_IMAGE_AREA = 80 * 60; // smaller than this is almost always an icon
 
   // Reset per textOf() call (see below), so a discarded first pass (the
@@ -511,15 +513,27 @@
   });
 
   /**
-   * Draws `source` onto a fresh canvas, scaled so neither side exceeds
-   * MAX_IMAGE_DIM, and reads it back as a PNG data URL. Throws SecurityError if
-   * `source` is cross-origin pixels the page never opted into sharing (a
-   * "tainted" canvas) - the caller decides what to do about that.
+   * Draws `source` onto a fresh canvas at the size the API will actually look
+   * at, and reads it back as a PNG data URL. Throws SecurityError if `source` is
+   * cross-origin pixels the page never opted into sharing (a "tainted" canvas) -
+   * the caller decides what to do about that.
+   *
+   * The size is picked to match how a high-detail image is consumed: it is fitted
+   * inside a square bound and then scaled so its SHORT side is around 768px
+   * before being cut into tiles. So the short side is what carries the detail,
+   * and an earlier version capping the LONG side at 1024 quietly destroyed it on
+   * anything wide - a 3:1 table screenshot arrived with a 341px short side and
+   * its small print already gone. Aiming at the short side instead keeps the
+   * legibility and, for ordinary 4:3 diagrams, sends fewer bytes than before.
    */
   const rasterize = (source, naturalW, naturalH) => {
     const w0 = Math.max(1, Math.round(naturalW || 1));
     const h0 = Math.max(1, Math.round(naturalH || 1));
-    const scale = Math.min(1, MAX_IMAGE_DIM / Math.max(w0, h0));
+
+    // Never upscale: min(1, ...) throughout. There is no detail to recover.
+    let scale = Math.min(1, TARGET_IMAGE_SHORT / Math.min(w0, h0));
+    if (Math.max(w0, h0) * scale > MAX_IMAGE_LONG) scale = MAX_IMAGE_LONG / Math.max(w0, h0);
+
     const w = Math.max(1, Math.round(w0 * scale));
     const h = Math.max(1, Math.round(h0 * scale));
 

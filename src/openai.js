@@ -266,7 +266,10 @@ export function buildResponsesBody(settings, prompt, caps) {
   } else if (caps.format === 'json_object') {
     text.format = { type: 'json_object' };
   }
-  if (caps.verbosity) text.verbosity = 'low';
+  // 'low' used to be sent here. It shortens the visible output, and the visible
+  // output is where the model does its arithmetic before committing to an
+  // answer - so it was trimming the one thing worth paying for.
+  if (caps.verbosity) text.verbosity = 'medium';
   if (Object.keys(text).length) body.text = text;
 
   if (caps.reasoning) body.reasoning = { effort: effortOf(settings) };
@@ -292,7 +295,7 @@ export function buildChatBody(settings, prompt, caps) {
   }
 
   if (caps.reasoning) body.reasoning_effort = effortOf(settings);
-  if (caps.verbosity) body.verbosity = 'low';
+  if (caps.verbosity) body.verbosity = 'medium'; // see buildResponsesBody
   if (caps.temperature) body.temperature = 0;
   if (caps.maxTokens) body.max_completion_tokens = maxTokensFor(settings);
   if (caps.store) body.store = false; // same promise as the Responses path

@@ -8,9 +8,24 @@
 import { answerQuestions, OpenAIError, TruncatedError } from './openai.js';
 import { clearJob, getJob, getSettings, pageKey, setJob } from './storage.js';
 
-const CHUNK_CHARS = 14000;   // roughly 3.5k tokens of page text per request
+/*
+ * A whole page in one request wherever it fits. Splitting is not free accuracy-
+ * wise: chunks cannot see each other, so a table, a shared preamble or a diagram
+ * in part 1 is invisible to a question in part 3 that refers to it. This used to
+ * be 14000, which split an ordinary paper three or four ways for no reason -
+ * modern context windows are nowhere near the binding constraint. A page that
+ * still does not fit falls back to halving in runChunk.
+ */
+const CHUNK_CHARS = 40000;
 const MIN_CHUNK_CHARS = 900; // below this, splitting further cannot help
 const MAX_PARALLEL = 3;
+
+/**
+ * Above this many shaky answers in one chunk, skip the second pass. At that
+ * volume the confidence flags are not picking out a few weak spots any more,
+ * and re-deriving the lot just doubles the bill.
+ */
+const VERIFY_MAX_QUESTIONS = 20;
 
 // Generous headroom per frame when merging [[IMG:n]] tokens from several
 // frames into one id-space; unrelated to extract.js's own per-frame image cap.
@@ -367,6 +382,33 @@ function imagesForChunk(chunk, images) {
   return images.filter((img) => ids.has(img.id));
 }
 
+/**
+ * Second opinion on the answers the model was not sure about.
+ *
+ * Only the low- and medium-confidence ones go back, so a page that came back
+ * clean costs nothing extra, and a shaky one pays for a re-derivation of just
+ * the shaky part. The pass is best-effort by design: if it fails, errors, or
+ * comes back with nothing usable, the first pass's answers stand. A wobbly
+ * second opinion must never be able to make the sheet worse than not asking.
+ */
+async function verifyUncertain(settings, promptInput, questions, signal) {
+  const drafts = questions.filter((q) => q.confidence !== 'high');
+  if (!drafts.length || drafts.length > VERIFY_MAX_QUESTIONS) return questions;
+
+  let checked;
+  try {
+    ({ questions: checked } = await answerQuestions(settings, { ...promptInput, drafts }, signal));
+  } catch (err) {
+    if (err?.name === 'AbortError') throw err;
+    return questions;
+  }
+
+  // Correct in place by question number, and ignore anything the second pass
+  // invented that was not on the list it was given.
+  const byNumber = new Map(checked.map((q) => [q.number, q]));
+  return questions.map((q) => byNumber.get(q.number) || q);
+}
+
 /** Runs one chunk, halving it if the model runs out of room mid-answer. */
 async function runChunk(settings, page, chunk, part, parts, signal, depth = 0) {
   const promptInput = {
@@ -383,7 +425,7 @@ async function runChunk(settings, page, chunk, part, parts, signal, depth = 0) {
 
   try {
     const { questions } = await answerQuestions(settings, promptInput, signal);
-    return questions;
+    return await verifyUncertain(settings, promptInput, questions, signal);
   } catch (err) {
     if (!(err instanceof TruncatedError) || depth >= 2 || chunk.length < MIN_CHUNK_CHARS) throw err;
     const halves = chunkText(chunk, Math.floor(chunk.length / 2));
