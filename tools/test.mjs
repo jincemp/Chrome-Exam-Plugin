@@ -784,7 +784,7 @@ await test('body: the chat shape wraps the schema and nests nothing', async () =
   const body = buildChatBody(settings, PROMPT, initialCaps(settings));
   assert.equal(body.response_format.json_schema.name, 'answer_sheet');
   assert.equal(body.reasoning_effort, DEFAULT_SETTINGS.effort, 'flat on chat completions');
-  assert.equal(body.verbosity, 'low');
+  assert.equal(body.verbosity, 'medium', 'low was trimming the working the model shows');
   assert.ok(body.max_completion_tokens > 0);
   assert.equal('max_tokens' in body, false);
   assert.equal(body.store, false);
@@ -839,9 +839,94 @@ await test('settings: a plain-http proxy is rejected, except on this machine', a
   assert.equal(isInsecureBase('https://proxy.example.com/v1'), false);
 });
 
+await test('settings: an install on the old default effort is moved up to the new one', async () => {
+  const after = migrate({ model: 'gpt-5.6-luna', effort: 'medium', settingsVersion: 1 });
+  assert.equal(after.effort, 'high');
+  assert.equal(after.settingsVersion, 2);
+});
+
+await test('settings: an effort the user chose to save money is NOT raised', async () => {
+  // High costs roughly three times what low does. Someone who picked low picked
+  // it on purpose, and quietly tripling their bill is not an upgrade.
+  const after = migrate({ model: 'gpt-5.6-luna', effort: 'low', settingsVersion: 1 });
+  assert.equal(after.effort, 'low');
+  assert.equal(after.settingsVersion, 2, 'still marked migrated, just not changed');
+});
+
+await test('settings: a deliberately expensive effort is left alone too', async () => {
+  assert.equal(migrate({ model: 'gpt-5.6-luna', effort: 'max', settingsVersion: 1 }).effort, 'max');
+});
+
+await test('settings: the oldest installs land on both current defaults at once', async () => {
+  const after = migrate({ model: 'gpt-5.4-nano', effort: 'low', settingsVersion: 0 });
+  assert.equal(after.model, DEFAULT_SETTINGS.model);
+  assert.equal(after.effort, DEFAULT_SETTINGS.effort);
+});
+
 await test('settings: the page key ignores the fragment but not the path', async () => {
   assert.equal(pageKey('https://x.test/exam#q3'), pageKey('https://x.test/exam'));
   assert.notEqual(pageKey('https://x.test/exam/2'), pageKey('https://x.test/exam'));
+});
+
+/* ------------------------------------------------- prompt: review pages */
+
+await test('prompt: the model is told a marked-up attempt is not the answer key', async () => {
+  // A review page hands over the student's own answers. Reading "[selected]" or
+  // "Answer: 56.2" as authoritative is the single easiest way to be wrong.
+  const p = buildPrompt({ text: '1. A question?' });
+  assert.match(p.system, /\[selected\]/);
+  assert.match(p.system, /The correct answer is/i);
+  assert.match(p.system, /Mark 0\.00/);
+});
+
+await test('prompt: the working is no longer capped at a dozen words', async () => {
+  const p = buildPrompt({ text: '1. A question?' });
+  assert.doesNotMatch(p.system, /12 words/);
+  assert.doesNotMatch(JSON.stringify(ANSWER_SCHEMA), /12 words/);
+});
+
+await test('prompt: the model is warned about columns the page lost the alignment of', async () => {
+  const p = buildPrompt({ text: '1. A question?' });
+  assert.match(p.system, /column/i);
+});
+
+/* ------------------------------------------------- prompt: verification */
+
+const DRAFTS = [{ number: '4', label: 'a', answer: '56.2', why: 'read the warm column', confidence: 'low' }];
+
+await test('verify: drafts switch the prompt into second-pass mode', async () => {
+  const p = buildPrompt({ text: '4. Calculate it.', drafts: DRAFTS });
+  assert.match(p.system, /SECOND PASS/);
+  assert.match(p.system, /from scratch/);
+  assert.match(p.user, /DRAFT ANSWERS TO CHECK/);
+  assert.match(p.user, /Q4: a\) 56\.2/);
+  assert.match(p.user, /read the warm column/, "the draft's reasoning is what the second pass argues with");
+});
+
+await test('verify: the base rules still apply on the second pass', async () => {
+  // VERIFY is appended, not substituted - it refers to "every rule above".
+  const p = buildPrompt({ text: '4. Calculate it.', drafts: DRAFTS });
+  assert.match(p.system, /You build answer keys/, 'the first-pass rules must still be present');
+  assert.match(p.system, /\[selected\]/, 'including how to read a review page');
+});
+
+await test('verify: the page comes before the draft, so it is reasoned from first', async () => {
+  const p = buildPrompt({ text: '4. Calculate it.', drafts: DRAFTS });
+  assert.ok(p.user.indexOf('PAGE TEXT') < p.user.indexOf('DRAFT ANSWERS'), p.user);
+});
+
+await test('verify: no drafts means the ordinary prompt, unchanged', async () => {
+  for (const drafts of [undefined, []]) {
+    const p = buildPrompt({ text: '1. A question?', drafts });
+    assert.doesNotMatch(p.system, /SECOND PASS/);
+    assert.doesNotMatch(p.user, /DRAFT ANSWERS/);
+  }
+});
+
+await test('verify: the question-count guess is dropped on the second pass', async () => {
+  // It counts the whole page, but the second pass is only asked about a few.
+  const p = buildPrompt({ text: '4. Calculate it.', questionCount: 10, drafts: DRAFTS });
+  assert.doesNotMatch(p.user, /rough scan/);
 });
 
 /* -------------------------------------------------------------- appearance */

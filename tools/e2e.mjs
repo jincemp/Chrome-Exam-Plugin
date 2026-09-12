@@ -53,8 +53,12 @@ const QUIZ_PAGE = `<!doctype html>
   <footer><p>&copy; 2026 Example Prep. All rights reserved.</p></footer>
 </body></html>`;
 
-/** 60 questions, long enough to force the page to be split into chunks. */
-const LONG_QUESTION_COUNT = 60;
+/**
+ * Long enough to force a split. Chunks are 40k characters; 100 of these
+ * questions extract to ~49k, which is over that and still comfortably under
+ * the 60k the extractor truncates at, so nothing is lost on the way in.
+ */
+const LONG_QUESTION_COUNT = 100;
 const LONG_PAGE = `<!doctype html><html><head><title>Question bank</title></head><body><main>
 ${Array.from({ length: LONG_QUESTION_COUNT }, (_, i) => {
   const n = i + 1;
@@ -84,6 +88,25 @@ const IMAGE_ANSWERS = {
     { number: '2', label: 'b', answer: '10', why: '', confidence: 'high' },
     { number: '3', label: 'b', answer: '4', why: '', confidence: 'high' },
     { number: '4', label: 'b', answer: 'Rectangle', why: '', confidence: 'high' },
+  ],
+};
+
+/**
+ * The shaky first pass and the correction that should follow it. Q1 comes back
+ * low-confidence and wrong; the verification pass is expected to fix it. Q2 is
+ * high-confidence and must not be re-asked about at all.
+ */
+const SHAKY_ANSWERS = {
+  questions: [
+    { number: '1', label: 'a', answer: '220.80', why: 'not sure of the drop', confidence: 'low' },
+    { number: '2', label: 'c', answer: 'The grounded conductor', why: '', confidence: 'high' },
+    { number: '3', label: '', answer: '4.7 kΩ', why: 'Series resistances add', confidence: 'high' },
+  ],
+};
+
+const CORRECTED_ANSWERS = {
+  questions: [
+    { number: '1', label: 'b', answer: '230.34', why: '240 x 0.97 = 232.8, nearest printed option is 230.34', confidence: 'high' },
   ],
 };
 
@@ -189,8 +212,14 @@ const server = http.createServer((req, res) => {
 
       // In chunked mode, answer exactly the questions this chunk contains, so
       // the merge is tested against what was really sent.
+      // The verification pass is recognisable by the draft block the client
+      // appends; answering it with the same shaky sheet would prove nothing.
+      const isVerify = String(JSON.stringify(content)).includes('DRAFT ANSWERS TO CHECK');
+
       let answers = ANSWERS;
-      if (mode === 'many') {
+      if (mode === 'verify') {
+        answers = isVerify ? CORRECTED_ANSWERS : SHAKY_ANSWERS;
+      } else if (mode === 'many') {
         const numbers = [...content.matchAll(/^(\d+)\. Considering/gm)].map((m) => m[1]);
         answers = { questions: numbers.map((n) => ({ number: n, label: 'c', answer: `The third alternative for scenario ${n}, longer still to pad the page out.`, why: '', confidence: 'high' })) };
       } else if (mode === 'images' || mode === 'no-vision') {
@@ -324,7 +353,7 @@ try {
     assert.equal(body.text.format.type, 'json_schema');
     assert.equal(body.text.format.name, 'answer_sheet', 'name must be flat, not wrapped in json_schema');
     assert.equal(body.text.format.strict, true);
-    assert.equal(body.text.verbosity, 'low');
+    assert.equal(body.text.verbosity, 'medium', "'low' was trimming the working the model shows");
     assert.equal(body.reasoning.effort, 'medium');
     assert.equal(body.max_output_tokens > 0, true);
     assert.equal(body.store, false, 'exam text must not be retained');
@@ -575,7 +604,7 @@ try {
   check('no question is lost or duplicated across the split', () => {
     const numbers = (chunked.record.answers || []).map((a) => Number(a.number)).sort((x, y) => x - y);
     assert.equal(new Set(numbers).size, numbers.length, 'answers must be deduplicated');
-    assert.deepEqual(numbers, Array.from({ length: 60 }, (_, i) => i + 1));
+    assert.deepEqual(numbers, Array.from({ length: LONG_QUESTION_COUNT }, (_, i) => i + 1));
   });
 
   check('no chunk starts mid-question', () => {
@@ -716,6 +745,41 @@ try {
   });
 
   await noVision.close();
+
+  /* ------------------------------- a shaky answer gets a second opinion */
+
+  mode = 'verify';
+  seen.bodies.length = 0;
+  const shaky = await runJob();
+
+  check('an answer the model was unsure about is sent back for checking', () => {
+    assert.equal(shaky.record?.status, 'done', JSON.stringify(shaky.record?.error));
+    assert.equal(seen.bodies.length, 2, 'expected the first pass plus one verification pass');
+  });
+
+  check('only the unsure question is re-asked, not the confident ones', () => {
+    const drafts = JSON.stringify(seen.bodies[1].input[0].content);
+    assert.match(drafts, /DRAFT ANSWERS TO CHECK/);
+    assert.match(drafts, /Q1:/, 'the low-confidence question must be in the draft');
+    assert.doesNotMatch(drafts, /Q2:/, 'a high-confidence answer must not cost a second request');
+    assert.doesNotMatch(drafts, /Q3:/);
+  });
+
+  check('the verification pass tells the model to re-derive, not to agree', () => {
+    const sent = JSON.stringify(seen.bodies[1]);
+    assert.match(sent, /SECOND PASS/);
+    assert.match(sent, /from scratch/);
+  });
+
+  check('the corrected answer replaces the shaky one, and the rest survive', () => {
+    const byNumber = Object.fromEntries((shaky.record.answers || []).map((a) => [a.number, a]));
+    assert.equal(byNumber['1'].answer, '230.34', 'the second pass should have corrected Q1');
+    assert.equal(byNumber['1'].label, 'b');
+    assert.equal(byNumber['1'].confidence, 'high');
+    assert.equal(byNumber['2'].answer, 'The grounded conductor', 'untouched answers must carry through');
+    assert.equal(byNumber['3'].answer, '4.7 k\u03A9');
+    assert.equal(shaky.record.answers.length, 3, 'no question gained or lost');
+  });
 
   /* ------------------------------------ a quiz embedded from another origin */
 
@@ -889,14 +953,14 @@ try {
     assert.equal(upgraded.record?.status, 'done', JSON.stringify(upgraded.record?.error));
     const body = seen.bodies.at(-1);
     assert.equal(body.model, 'gpt-5.6-luna', 'stored settings must not pin the retired default');
-    assert.equal(effortSent(body), 'medium');
+    assert.equal(effortSent(body), 'high', 'and it should land on the current default effort, not the old one');
   });
 
   const persisted = await driver.evaluate(() => chrome.storage.local.get(null));
 
   check('the upgrade is written once, so a later deliberate choice sticks', () => {
     assert.equal(persisted.model, 'gpt-5.6-luna');
-    assert.equal(persisted.settingsVersion, 1);
+    assert.equal(persisted.settingsVersion, 2);
     assert.equal(persisted.apiKey, 'sk-test-key', 'migrating must not disturb the key');
   });
 

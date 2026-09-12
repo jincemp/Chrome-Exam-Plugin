@@ -24,9 +24,11 @@ still gets answered.
 3. [Use it](#use-it) — the part you actually came for.
 
 **Already installed?** [Updating to a new version](#updating-to-a-new-version)
-is the section you want. [Settings](#settings), [Cost](#cost) and
-[Troubleshooting](#troubleshooting) are further down, and
-[Share it with a friend](#share-it-with-a-friend) covers passing it on.
+is the section you want, and [When an answer is wrong](#when-an-answer-is-wrong)
+is the one to read if the answers are not what you expected.
+[Settings](#settings), [Cost](#cost) and [Troubleshooting](#troubleshooting) are
+further down, and [Share it with a friend](#share-it-with-a-friend) covers
+passing it on.
 
 ---
 
@@ -382,33 +384,70 @@ moves you onto it automatically on the next run. The exception is a setting you
 chose yourself: if you deliberately picked a model, your choice is kept and
 never overwritten.
 
+## When an answer is wrong
+
+The model can be wrong, and a few things make it much less likely.
+
+**Raise Thinking.** It ships on High. If a particular paper keeps coming back
+wrong, Very high is the next step — slower and dearer, but it is the setting
+that actually moves accuracy on calculations. See [Cost](#cost).
+
+**Use Extra instructions.** Naming the syllabus, code edition, or unit
+convention removes a whole class of plausible-but-wrong answers, e.g.
+*"This is the 2023 NEC"* or *"Answer in ML/day, not m³/s."*
+
+**Click the answer to see the working.** The model shows its arithmetic before
+it commits to a number, so a wrong answer usually has a visible wrong step —
+often a value read from the wrong row or column of a table. That tells you
+whether it misread the question or genuinely does not know.
+
+**Watch for `?`.** That marks an answer the model was unsure of even after
+being asked to check it again. Those are the ones to verify yourself.
+
+**On a review page, it should agree with the page.** If the page already prints
+"The correct answer is…", the extension is told to prefer that over its own
+working. An answer that contradicts a printed correct answer is a bug worth
+reporting, not a judgement call.
+
+Some things it genuinely cannot do much about: a question that depends on a
+table or handout that is not on the page, a diagram too cramped or low-contrast
+to read, or a page that numbers its questions in a way nothing can parse.
+
 ## Cost
 
 You pay OpenAI directly, per use. A page of about twenty questions costs
-roughly **a cent** on the default settings, so a few dollars of credit lasts a
-long time. The whole page goes in one request rather than one per question,
-which is most of why it is cheap.
+roughly **one to two cents** on the default settings, so a few dollars of
+credit lasts a long time. The whole page goes in one request rather than one
+per question, which is most of why it is cheap.
 
-Two things move that number, in order of how much they matter:
+Thinking is what moves that number:
 
 | | roughly, per page |
 | --- | --- |
-| Default: `gpt-5.6-luna`, Thinking **Medium** | 0.9¢ |
+| Default: `gpt-5.6-luna`, Thinking **High** | 1.5¢ |
+| Same model, Thinking **Medium** | 0.9¢ |
 | Same model, Thinking **Low** | 0.4¢ |
-| Same model, Thinking **High** | 1.5¢ |
-| `gpt-5.6-sol`, Thinking Medium | 15¢ |
+| `gpt-5.6-sol`, Thinking High | 20¢ |
 
-**Thinking is the dial worth touching first.** Going from None to Low is a
-large accuracy jump; each step above that costs about three times the previous
-one for a much smaller gain. A pricier model is rarely the cheaper fix.
+**The default is High because accuracy is the point.** Going from None to Low
+is a large jump; each step above that costs about three times the previous one
+for a smaller gain, but on calculation questions those gains are exactly where
+wrong answers come from. If you would rather halve the bill and can live with
+the occasional slip, drop to Medium. A pricier *model* is rarely the cheaper
+fix — raise Thinking first.
+
+Two things add to a page's cost:
+
+- **Diagrams.** Each image is billed as input tokens on top of the page text,
+  roughly a fraction of a cent apiece.
+- **Second opinions.** When the model says it is unsure about some answers,
+  those questions are automatically sent back to be worked out again. A page
+  that comes back confident costs nothing extra; a shaky one costs up to
+  about half as much again.
 
 These are estimates, not a quote. Reasoning is billed as output and varies a
 lot per question — treat anything above Medium as unpredictable within a factor
 of two, and set a monthly cap on your OpenAI account.
-
-A page with diagrams costs more: each image is billed as input tokens on top
-of the page text, roughly a fraction of a cent apiece at the resolution this
-extension sends.
 
 ## Share it with a friend
 
@@ -457,7 +496,7 @@ handful of friends, the zip is the pragmatic answer.
 | **API key** | Your OpenAI key. Stored in this browser only. |
 | **Model** | Which model answers. Add your key and press **Test key** to fill the list with the models your account can actually use. Pick *Other* to type an ID by hand. |
 | **Reset to defaults** | Puts back everything this version ships with, keeping your API key. |
-| **Thinking** | How much working the model does before it answers. Raise it when a paper keeps coming back wrong; lower it for speed. See [Cost](#cost). |
+| **Thinking** | How much working the model does before it answers, and the first thing to change when answers come back wrong. Ships on **High**. Lower it for speed and cost. See [Cost](#cost) and [When an answer is wrong](#when-an-answer-is-wrong). |
 | **Extra instructions** | Sent with every request. Good for naming a code edition or syllabus, e.g. *"Answers should follow the 2023 NEC."* |
 | **Show working** | Whether clicking an answer reveals how the model got there. |
 | **API base URL** | Advanced. Point at an OpenAI-compatible proxy instead. |

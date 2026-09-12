@@ -42,16 +42,17 @@
           <select id="effort">
             <option value="none">None — fastest and cheapest, but poor at maths</option>
             <option value="low">Low — fine for recall questions</option>
-            <option value="medium">Medium — the default, handles calculations</option>
-            <option value="high">High — for a paper you keep getting wrong</option>
+            <option value="medium">Medium — cheaper, occasionally slips on maths</option>
+            <option value="high">High — the default, best for calculations</option>
             <option value="xhigh">Very high — much slower, much dearer</option>
             <option value="max">Maximum — last resort, can time out</option>
           </select>
           <span class="hint">
-            How much working the model does before it answers. Going from None to
+            How much working the model does before it answers, and the setting
+            worth touching first when answers come back wrong. Going from None to
             Low is the big jump; each step after that costs roughly three times
-            the previous one for a smaller gain. Start at Medium and only climb
-            if a particular paper keeps coming back wrong.
+            the previous one for a smaller gain. Drop to Medium if you would
+            rather halve the cost and can live with the odd slip.
           </span>
         </label>
 
