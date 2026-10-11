@@ -7,7 +7,7 @@
 
 import { answerQuestions, OpenAIError, TruncatedError } from './openai.js';
 import { clearJob, getJob, getSettings, pageKey, setJob } from './storage.js';
-import { answersHeld, HELPER, readyToRestart, restartIfUpdated } from './update.js';
+import { answersHeld, compareVersions, HELPER, readyToRestart, restartIfUpdated } from './update.js';
 
 /*
  * A whole page in one request wherever it fits. Splitting is not free accuracy-
@@ -737,7 +737,15 @@ chrome.tabs.onRemoved.addListener((tabId) => {
 // A fresh worker has no per-tab icon state, and session storage may still hold
 // finished jobs from before it was torn down. Put the badges back.
 chrome.runtime.onStartup.addListener(() => restoreBadges());
-chrome.runtime.onInstalled.addListener(() => restoreBadges());
+chrome.runtime.onInstalled.addListener((details) => {
+  restoreBadges();
+  // An update from a version before the Update now button was run by that
+  // old version's updater, which cannot switch the button on: it takes one
+  // more double-click. The popup says so until the button works.
+  if (details?.reason === 'update' && details.previousVersion && compareVersions(details.previousVersion, '1.9.0') < 0) {
+    chrome.storage.local.set({ helperHint: true }).catch(() => {});
+  }
+});
 
 async function restoreBadges() {
   try {

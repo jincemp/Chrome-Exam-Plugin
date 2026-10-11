@@ -507,7 +507,11 @@ await test('a run registers the "Update now" helper, for this copy only', async 
     assert.equal(readFileSync(m.path, 'utf8'), readFileSync(path.join(ext, 'updater', 'native-host.sh'), 'utf8'));
     const launcher = path.join(reg.home, 'Update Quiz Answers.command');
     assert.ok(statSync(launcher).mode & 0o100, 'Terminal only runs an executable .command');
-    assert.match(readFileSync(launcher, 'utf8'), /^exec \/bin\/bash .*\/updater\/update\.sh$/m);
+    assert.match(readFileSync(launcher, 'utf8'), /^updater=.*\/updater\/update\.sh$/m);
+    assert.match(readFileSync(launcher, 'utf8'), /^exec \/bin\/bash "\$updater"$/m);
+    // What it really runs, from a folder with spaces and brackets in its path.
+    const ran = spawnSync('bash', ['-c', `source <(sed 's/^exec /echo /' '${launcher.replace(/'/g, "'\\''")}')`], { encoding: 'utf8' });
+    assert.equal(ran.stdout.trim(), `/bin/bash ${path.join(ext, 'updater', 'update.sh')}`, ran.stderr);
   } else {
     // Outside the folder, which Windows could not rename while Chrome runs a helper in it.
     assert.equal(m.path, path.join(reg.home, 'native-host.bat'));
@@ -593,6 +597,40 @@ await test('two updates of one folder at once: the second is turned away, the fi
   assert.equal(versionIn(ext), '9.9.9');
   noLeftovers(ext);
 });
+
+if (engine.label === 'mac' && spawnSync('sh', ['-c', 'command -v script']).status === 0) {
+  await test('a window left open at "Press Return" does not hold the folder', async () => {
+    // A failed run, its window waiting for Return: the next update must go ahead.
+    const ext = installed('1.7.0');
+    served = { status: 404, body: Buffer.from('nope') };
+    const waiting = spawn('script', ['-qfec', `bash '${path.join(ext, 'updater', 'update.sh')}'`, '/dev/null'], {
+      env: { ...process.env, QUIZ_ANSWERS_ZIP_URL: ZIP_URL }, stdio: ['pipe', 'pipe', 'pipe'],
+    });
+    let shown = '';
+    waiting.stdout.on('data', (d) => { shown += d; });
+    for (let i = 0; i < 100 && !/Press Return/.test(shown); i++) await new Promise((r) => setTimeout(r, 100));
+    served = { status: 200, body: latestZip('9.9.9') };
+    const next = await runUpdater(ext);
+    waiting.stdin.end('\n');
+    await new Promise((r) => waiting.on('close', r));
+    assert.match(shown, /Update failed: could not download/);
+    assert.equal(next.status, 0, next.out);
+    assert.equal(versionIn(ext), '9.9.9');
+    noLeftovers(ext);
+  });
+}
+
+if (engine.label === 'mac') {
+  await test('a run cut off partway still tells the Update now helper how it ended', async () => {
+    const ext = installed('1.7.0');
+    const report = path.join(scratch, `report-${passed}`);
+    served = { status: 200, body: latestZip('9.9.9') };
+    const quit = await runUpdater(ext, { QUIZ_ANSWERS_QUIT_AFTER: '2', QUIZ_ANSWERS_REPORT: report });
+    assert.notEqual(quit.status, 0, quit.out);
+    const lines = readFileSync(report, 'utf8').trim().split('\n');
+    assert.deepEqual(lines.slice(-2), ['Update failed: the update was stopped before it finished.', '-- done --']);
+  });
+}
 
 if (engine.label === 'mac') {
   await test('a lock left by a run that is gone does not block the next one', async () => {

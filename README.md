@@ -301,10 +301,13 @@ it when it says it is done. The settings page has the same button, and it
 checks for a new version as soon as you open it.
 
 **The button has to be switched on once, by a double-click.** Chrome will not
-let an extension change its own files, so the button asks a small helper that
-lives in the extension's folder to do it. Double-clicking **Update Quiz
-Answers** in that folder (below) registers the helper with Chrome, for this
-copy of Quiz Answers alone, and updates it at the same time. Until then the
+let an extension change its own files, so the button asks a small helper to
+do it. Double-clicking **Update Quiz Answers** in the extension's folder
+(below) copies the helper out of the folder, registers it with Chrome for this
+copy of Quiz Answers alone, and updates it at the same time. (Coming from 1.8.0
+or 1.8.1, it takes two double-clicks: the first is done by the old version's
+updater, which installs the new one but knows nothing of the button. The
+popup asks for the second.) Until then the
 popup says *"double-click "Update Quiz Answers" in the extension's folder"*
 instead, and **Where is the folder?** opens the extension's page in Chrome,
 which shows the folder's location next to *Loaded from*. The double-click goes
@@ -330,10 +333,11 @@ Quitting and reopening Chrome also switches it over.
 1. In Finder, open the extension's folder and double-click
    **Update Quiz Answers**.
 2. A Terminal window opens. It downloads the new version, swaps it into the
-   folder, and finishes with *"Updated Quiz Answers from 1.8.0 to 1.9.0."* (or
+   folder, and finishes with *"Updated Quiz Answers from 1.9.0 to 1.10.0."* (or
    *"You already have the latest version"*) and *"From now on Quiz Answers can
    update itself"*. Press Return. If the window then says *[Process
-   completed]*, close it.
+   completed]*, close it. (No *"From now on"* line? That is the updater of
+   1.8.0 or 1.8.1: double-click once more to switch on the button.)
 3. Click the Quiz Answers icon. If the popup's button says **Restart to finish
    the update**, click it, then click the icon again. If it has already
    switched over by itself, there is nothing to do.
@@ -355,8 +359,8 @@ the internet, so macOS wants you to confirm it once. After that it just runs.
   Documents folder**, click **Allow**. The updater has to be able to change the
   folder.
 
-  If you clicked *Don't Allow*, macOS does not ask again, and the updater can
-  only stop with *"Operation not permitted"*. To allow it afterwards: Apple menu
+  If you clicked *Don't Allow*, macOS does not ask again, and the updater
+  stops with *"macOS did not let Terminal open the Quiz Answers folder"*. To allow it afterwards: Apple menu
   → **System Settings** → **Privacy & Security** → **Files & Folders** →
   **Terminal**, and turn on the folder Quiz Answers is in (**Documents Folder**,
   **Desktop Folder** or **Downloads Folder**). Then double-click it again.
@@ -379,7 +383,9 @@ block pasted commands. After one successful run the double-click works again.
    of its name; the other file, `Update Quiz Answers.command`, is for Macs.
 2. A black window shows progress and finishes with *"Updated Quiz Answers from
    …"* (or *"You already have the latest version"*) and *"From now on Quiz
-   Answers can update itself"*. Press Enter to close it.
+   Answers can update itself"*. Press Enter to close it. (No *"From now on"*
+   line? That is the updater of 1.8.0 or 1.8.1: double-click once more to
+   switch on the button.)
 3. Click the Quiz Answers icon, and if the button says **Restart to finish the
    update**, click it — as on a Mac.
 
@@ -415,8 +421,9 @@ same in brief — then double-click the updater once to switch on the button.
 
 ## Updating by hand
 
-For the very first update to 1.8.0, or whenever you would rather not use the
-updater.
+For the very first update from a version below 1.8.0, or whenever you would
+rather not use the updater. ([HOW-TO-UPDATE.md](HOW-TO-UPDATE.md) has the same
+with a picture of every screen.)
 
 **The one rule that matters:** the new files must end up in the **same folder,
 at the same path**, as the old ones. Chrome recognises an unpacked extension by
@@ -430,8 +437,8 @@ is why an update can look like it did nothing.
 
 ### Step 1 — Check which version you have now
 
-Click the extension icon → **Settings** (or **Open settings**). At the very
-bottom of that page is a line like:
+Right-click the extension icon and choose **Options**. At the very bottom of
+that page is a line like:
 
 ```
 1.5.1 · model gpt-5.6-luna
@@ -484,7 +491,7 @@ Nothing dramatic happens on screen. That is fine.
 
 ### Step 6 — Confirm it actually updated
 
-Open the extension's settings again and look at that bottom line. **The version
+Right-click the extension icon → **Options** again and look at that bottom line. **The version
 number should have changed** from what you noted in Step 1.
 
 If it has, you are done. Your key, model, and thinking level are all as you left
@@ -674,8 +681,8 @@ never update on their own.
 - The extension asks for `activeTab`, not for access to every site: it can only
   read a page in the moment you click its icon.
 - To tell you about updates, it reads the version number in the project's
-  `manifest.json` on GitHub — at most once an hour, and only when you open the
-  popup or settings. Like any web request, it shows GitHub your IP
+  `manifest.json` on GitHub: at most once an hour when you open the popup, and
+  each time you open the settings page. Like any web request, it shows GitHub your IP
   address, and Chrome adds this copy's extension ID, which is worked out from
   the folder's location on your computer. It carries nothing about the pages
   you read or your answers, needs no extra permission, and is the only request
@@ -683,9 +690,13 @@ never update on their own.
   downloads is run; the number is just shown.
 - **Update now** works through Chrome's *native messaging*: the extension can
   start one program that you have registered for it, and nothing else. The
-  updater registers its own helper, for this copy's extension ID only:
-  `updater/native-host.bat` on Windows, and on a Mac a copy of
-  `updater/native-host.sh` in `~/Library/Application Support/Quiz Answers`.
+  updater registers its own helper, for this copy's extension ID only. On
+  Windows that is copies of `updater/native-host.bat` and `.ps1`, with a note
+  of which folder to update, in `%LOCALAPPDATA%\Quiz Answers`, named in the
+  registry under `HKCU\Software\Google\Chrome\NativeMessagingHosts`. On a Mac
+  it is a copy of `updater/native-host.sh` and a small launcher in
+  `~/Library/Application Support/Quiz Answers`, where the last run of Update
+  now also leaves what it said (`last-update`).
   (Chrome starts the helper as a program of its own, which macOS keeps out of
   Documents, Desktop and Downloads; so on a Mac the helper opens the update in
   Terminal, which you let into that folder the first time you double-clicked

@@ -465,7 +465,7 @@ try {
       /* A sentence is never split across two sheets of paper. */
       p, li { orphans: 3; widows: 3; } p { break-inside: avoid; }
       /* "On a Mac:" and the like stay on the page with the picture they introduce. */
-      p:has(> strong:only-child), p:has(+ p > img), li > p:has(+ img) { break-after: avoid; }
+      p:has(> strong:only-child), p:has(+ img), li > p:has(+ img), p:has(+ ul) { break-after: avoid; }
       hr { display: none; }
       code { font: 10pt 'DejaVu Sans Mono', monospace; background: #f1f2f4; padding: 1px 4px; border-radius: 3px; }
       blockquote { margin: 8pt 0; padding: 6pt 12pt; border-left: 3px solid #e8590c; background: #fbf3ee; }

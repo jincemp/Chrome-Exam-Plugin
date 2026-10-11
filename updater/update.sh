@@ -56,6 +56,7 @@ COUNT=0
 DISCARDED=0
 RECOVERED=0
 LOCK=''
+DONE=0
 
 REPORT="${QUIZ_ANSWERS_REPORT:-}"
 
@@ -66,11 +67,30 @@ say() {
 
 # Keep the window open long enough to read, when a person is there to read it.
 pause() {
-  # Every way this script ends comes through here, with everything said.
+  # Every way this script ends comes through here, with everything said and
+  # all the work done. So let go of the lock and the scratch folders before
+  # waiting for a reader: a window left open must not turn the next update
+  # away, nor - closed later - clean up after it.
+  cleanup
+  trap - EXIT
+  LOCK=''
+  WORK=''
+  STAGING=''
+  BACKUP=''
+  TRASH=''
   if [ -n "$REPORT" ]; then printf '%s\n' '-- done --' >>"$REPORT" 2>/dev/null; fi
+  DONE=1
   if [ -t 0 ] && [ -t 1 ]; then
     printf '\n'
     read -r -p 'Press Return to close this window. ' _ || true
+  fi
+}
+
+# A run cut off before pause() - its Terminal window closed, say - still tells
+# the "Update now" helper that is waiting for it, rather than leave it waiting.
+report_end() {
+  if [ -n "$REPORT" ] && [ "$DONE" != 1 ]; then
+    printf '%s\n' '' 'Update failed: the update was stopped before it finished.' '-- done --' >>"$REPORT" 2>/dev/null
   fi
 }
 
@@ -217,7 +237,18 @@ install_helper() {
 # just as a double-click on \"Update Quiz Answers\" in its folder would. Written
 # by that folder's updater, and rewritten each time it runs.
 export QUIZ_ANSWERS_REPORT=$(printf '%q' "$home/last-update")
-exec /bin/bash $(printf '%q' "$DIR/updater/update.sh")
+updater=$(printf '%q' "$DIR/updater/update.sh")
+# As the folder's own launcher does: opening it for real shows a refusal.
+if ! { : <\"\$updater\"; } 2>/dev/null; then
+  echo 'macOS did not let Terminal open the Quiz Answers folder. To allow it:'
+  echo 'Apple menu > System Settings > Privacy & Security > Files & Folders >'
+  echo 'Terminal, and turn on the folder Quiz Answers is in (Documents, Desktop'
+  echo 'or Downloads). Then click \"Update now\" again.'
+  printf '%s\n' 'Update failed: macOS did not let Terminal open the Quiz Answers folder.' '-- done --' >>\"\$QUIZ_ANSWERS_REPORT\"
+  read -r -p 'Press Return to close this window. ' _
+  exit 1
+fi
+exec /bin/bash \"\$updater\"
 " || return 1
   while IFS= read -r dir; do
     [ -n "$dir" ] && [ -d "$dir" ] || continue
@@ -343,6 +374,9 @@ recover_interrupted_run() {
 take_lock() {
   local lock="$DIR/.update-lock" pid
   if ! mkdir "$lock" 2>/dev/null; then
+    # Not there at all: the folder cannot be written, which the update says
+    # in a moment. Not a lock to wait for.
+    [ -d "$lock" ] || return 0
     pid="$(cat "$lock/pid" 2>/dev/null)"
     if [ -n "$(find "$lock" -maxdepth 0 -mmin +60 2>/dev/null)" ]; then
       : # an hour old: whatever made it is long gone
@@ -353,11 +387,14 @@ take_lock() {
     fi
   fi
   printf '%s\n' "$$" >"$lock/pid" 2>/dev/null || return 1
+  touch "$lock" 2>/dev/null # a lock taken over is as new as the run that holds it
   LOCK="$lock"
 }
 
 main() {
   local latest entry name
+
+  trap report_end EXIT
 
   DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd -P)" || { say 'Could not find the Quiz Answers folder.'; pause; exit 1; }
 
@@ -393,7 +430,7 @@ main() {
   STAGING="$DIR/.update-new"
   BACKUP="$DIR/.update-old"
   TRASH="$DIR/.update-trash"
-  trap cleanup EXIT
+  trap 'cleanup; report_end' EXIT
 
   if ! recover_interrupted_run; then
     say ''

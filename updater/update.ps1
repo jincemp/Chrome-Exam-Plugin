@@ -25,8 +25,8 @@ if ($ExecutionContext.SessionState.LanguageMode -ne 'FullLanguage') {
   Write-Host 'because Smart App Control (or a policy set by your organisation) has'
   Write-Host 'not approved it. Nothing was changed.'
   Write-Host ''
-  Write-Host 'Update Quiz Answers by hand instead: see "Updating by hand" in the'
-  Write-Host 'README at https://github.com/jincemp/Chrome-Exam-Plugin'
+  Write-Host 'Update Quiz Answers by hand instead: do part A of the update guide,'
+  Write-Host 'HOW-TO-UPDATE.md at https://github.com/jincemp/Chrome-Exam-Plugin'
   Write-Host ''
   $null = Read-Host 'Press Enter to close this window'
   exit 1

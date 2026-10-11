@@ -325,9 +325,10 @@ async function renderUpdate() {
   }
 
   const { available, latest } = await checkForUpdate();
-  if (!available) return;
+  if (!available) return renderHelperHint();
   const helper = await helperStatus();
   if (helper === 'ready') {
+    chrome.storage.local.remove('helperHint').catch(() => {});
     text.textContent = `Version ${latest} is out.`;
     action.textContent = 'Update now';
     action.onclick = () => runUpdate(latest);
@@ -336,6 +337,22 @@ async function renderUpdate() {
     text.textContent = withoutHelper(helper, latest);
     offerFolder();
   }
+  $('update').hidden = false;
+}
+
+/**
+ * Just updated from before the Update now button, by that old version's
+ * updater, which cannot switch the button on: one more double-click does.
+ * Said until the button works, while there is nothing newer to say instead.
+ */
+async function renderHelperHint() {
+  const { helperHint } = await chrome.storage.local.get('helperHint');
+  if (!helperHint) return;
+  const helper = await helperStatus();
+  if (helper === 'ready') return chrome.storage.local.remove('helperHint');
+  if (helper !== 'missing') return;
+  $('update-text').textContent = 'One more double-click on "Update Quiz Answers" in the extension\'s folder switches on the "Update now" button.';
+  offerFolder();
   $('update').hidden = false;
 }
 

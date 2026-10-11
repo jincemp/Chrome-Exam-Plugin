@@ -1338,6 +1338,31 @@ try {
   });
 
   const installedNow = JSON.parse(readFileSync(path.join(extDir, 'manifest.json'), 'utf8')).version;
+
+  // Coming from 1.8.x, the old updater installs this version but cannot switch
+  // the button on. Played here by reloading onto 1.8.1, then back onto this.
+  const reloadOnto = async (version) => {
+    const back = context.waitForEvent('serviceworker', { timeout: 20000 }).catch(() => null);
+    installUpdate(version);
+    await devPage.evaluate((id) => chrome.developerPrivate.reload(id, { failQuietly: true }), extensionId);
+    await back;
+    await new Promise((r) => setTimeout(r, 1000));
+  };
+  await reloadOnto('1.8.1');
+  await reloadOnto(installedNow);
+  for (const w of context.serviceWorkers().filter((x) => x.url().includes(extensionId)).reverse()) {
+    try { await w.evaluate(() => chrome.storage.local.remove('updateCheck')); break; } catch { /* gone */ }
+  }
+  const hintPopup = await openPopupFor(quizTabId);
+  await hintPopup.waitForSelector('#update:not([hidden])', { timeout: 10000 }).catch(() => {});
+  const hint = await hintPopup.textContent('#update').catch(() => '');
+  await hintPopup.close();
+
+  check('after an update from 1.8.x, the popup asks for the one more double-click that switches the button on', () => {
+    assert.match(hint, /One more double-click on "Update Quiz Answers"/);
+    assert.match(hint, /Where is the folder\?/);
+  });
+
   buildRelease(installedNow);
   const setup = await runSetup();
   const registered = (() => {
@@ -1422,6 +1447,15 @@ try {
     }
   }
   const afterClosedErrors = await registrationErrors();
+
+  let hintLeft = null;
+  for (const w of context.serviceWorkers().filter((x) => x.url().includes(extensionId)).reverse()) {
+    try { hintLeft = (await w.evaluate(() => chrome.storage.local.get('helperHint'))).helperHint ?? false; break; } catch { /* gone */ }
+  }
+
+  check('once the button works, the popup stops asking for the double-click', () => {
+    assert.equal(hintLeft, false);
+  });
 
   check('with the popup closed mid-update, as on a Mac, it still switches over by itself', () => {
     assert.equal(afterClosed?.version, lastVersion, `still ${afterClosed?.version}`);

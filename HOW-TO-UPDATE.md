@@ -22,8 +22,8 @@ on your screen.
 1. In Chrome, click the address bar at the top, type `chrome://extensions`
    and press **Enter** (**Return** on a Mac).
 2. Find the **Quiz Answers** box. The number next to the name is your version.
-   (No number, and the box says **Turn on developer mode**? Switch
-   **Developer mode** on at the top right first.)
+   (No number? Switch **Developer mode** on at the top right first. It needs
+   to stay on.)
 
 <img src="docs/how-to-update/a1-version.png" width="640" alt="Chrome's Extensions page. The Quiz Answers box shows the version number 1.7.0 next to its name.">
 
@@ -33,7 +33,7 @@ on your screen.
   [C. Every update after that: one click](#c-every-update-after-that-one-click).
 - **1.8.0 or 1.8.1** → go to
   [B. Switch on the Update button](#b-switch-on-the-update-button-once). It is
-  one double-click.
+  one file, double-clicked twice.
 - **Lower than 1.8.0** (for example 1.7.0 or 1.5.1) → start with
   [A. The one-time update](#a-the-one-time-update-versions-below-180) just
   below, then do B.
@@ -136,9 +136,9 @@ folder. If you have downloaded it before, the new one may be called
 
    <img src="docs/how-to-update/a3-loaded-from.png" width="640" alt="The Details page, scrolled down to Source. The path after 'Loaded from:' is ringed.">
 
-2. A folder window opens. **This is the folder Chrome uses.** (Does it already
-   have **Update Quiz Answers** in it? Then the new files are already in. Do
-   not paste: skip to Step 5.)
+2. A folder window opens. **This is the folder Chrome uses.** (Was your
+   version below 1.8.0, and this folder already has **Update Quiz Answers** in
+   it? Then the new files are already in. Do not paste: skip to Step 5.)
 
 **On a Mac:**
 
@@ -185,8 +185,8 @@ window that opens.
    <img src="docs/how-to-update/a6-new-version.png" width="640" alt="The Quiz Answers box, now showing the new version number.">
 
 ✅ **The new version is in**, and your API key is still there. You can delete
-the zip and the folder you unzipped in Step 3, but never the folder that opens
-from **Loaded from**. The number did not change? See
+the zip. Leave every folder where it is: the folder you unzipped can have the
+same name as the one Chrome uses, or even be it. The number did not change? See
 [Something went wrong?](#something-went-wrong)
 
 **One more thing, once:** do
@@ -198,8 +198,9 @@ Then you never have to copy files again.
 ## B. Switch on the Update button (once)
 
 Do this if you have version 1.8.0 or 1.8.1, or straight after A. You
-double-click one file, once. It also installs the newest version, if you do not
-have it yet. Afterwards, Quiz Answers has an **Update now** button.
+double-click one file: once after A, twice if you have 1.8.0 or 1.8.1 (Step 4
+says when). It also installs the newest version, if you do not have it yet.
+Afterwards, Quiz Answers has an **Update now** button.
 
 ### Step 1. Open the folder Chrome uses
 
@@ -235,7 +236,8 @@ After that, it just runs.
   3 below.
 - **It has no Done button** (macOS 14 or older): click **OK** or **Cancel**.
   Then right-click (or Control-click) the file, choose **Open**, and click
-  **Open** again. Then go on to Step 4.
+  **Open** again. Then skip 1 to 3 below, read **On any Mac** just after
+  them, and go on to Step 4.
 
 1. Click **Done**.
 
@@ -279,6 +281,14 @@ A window shows the progress. It takes a few seconds. When it says **"From now
 on Quiz Answers can update itself"**, press **Return** (Mac) or **Enter**
 (Windows).
 
+**Had 1.8.0 or 1.8.1?** Then this first time the window ends with **"Updated
+Quiz Answers from 1.8.… to …"** and no "From now on…" line. That is expected:
+your old version did this part, and it cannot switch the button on. Press
+**Return** (Mac) or **Enter** (Windows), close the window, and double-click
+**Update Quiz Answers** once more, exactly as in Step 2. This time it says
+**"You already have the latest version"** and **"From now on Quiz Answers can
+update itself"**.
+
 On a Mac, the window may then stay open and say **[Process completed]**. That
 is fine: close it with the red dot at its top left.
 
@@ -291,7 +301,8 @@ is fine: close it with the red dot at its top left.
 <img src="docs/how-to-update/win-console.png" width="560" alt="Example of the black window when it has finished: Updated Quiz Answers, then: From now on Quiz Answers can update itself: when a new version is out, click Update now in its window. Then: Press Enter to close this window.">
 
 It says **"You already have the latest version"** instead of "Updated"? That
-is right if you have just done A. It still switches the button on.
+is right if you have just done A, or if this is your second double-click. It
+still switches the button on.
 
 ### Step 5. Finish in Chrome
 
@@ -325,10 +336,14 @@ When a new version is out, the bottom of the box says so. Click **Update now**.
 - **No line about a new version?** Then you already have the newest one. (It
   checks about once an hour. To check right now, right-click the Quiz Answers
   icon and choose **Options**: the settings page asks straight away, and has
-  the same **Update now** button.)
+  the same **Update now** button. If you update from there, click **Restart
+  now** on that page when it appears.)
 - **It says to double-click "Update Quiz Answers" instead?** The button is not
   switched on yet: do
   [B. Switch on the Update button](#b-switch-on-the-update-button-once) once.
+  (It says updating from here is switched off on this computer, or it still
+  says to double-click after you have done B? Then the button cannot work on
+  this computer: do B each time there is a new version.)
 
 ### Step 2. Let it update
 
@@ -339,17 +354,19 @@ When a new version is out, the bottom of the box says so. Click **Update now**.
 
 <img src="docs/how-to-update/c3-restarting.png" width="340" alt="The Quiz Answers box, saying: Updated Quiz Answers from 1.9.0 to 1.10.0. Restarting… click the icon again in a moment.">
 
-**On a Mac**, a Terminal window opens and does the update, just as in B. When
-it says **"Updated Quiz Answers from … to …"**, press **Return**, then close
-the window with the red dot at its top left. (If a box asks whether
+**On a Mac**, a Terminal window opens and does the update, just as in B. Leave
+it open until it has finished: it says **"Updated Quiz Answers from … to …"**,
+or why it did not work. Then press **Return**, and close the window with the
+red dot at its top left. (If a box asks whether
 **"Terminal"** may access files in a folder, click **Allow**.)
 
 <img src="docs/how-to-update/mac-terminal.png" width="560" alt="Example of the Terminal window when it has finished: Updated Quiz Answers from 1.9.0 to 1.10.0. Then: Press Return to close this window.">
 
 ### Step 3. Click the icon again
 
-Click the Quiz Answers icon again. ✅ **Done!** It has switched to the new
-version by itself.
+Click the Quiz Answers icon again. ✅ **Done!** It has usually switched to the
+new version by itself. If the button says **Restart to finish the update**,
+click it, then click the icon again.
 
 Does the bottom of the box say the new version **switches over by itself once
 you close or leave the page with answers**? Then you are done too: it finishes
@@ -368,7 +385,8 @@ First check that you clicked the round arrow on the Quiz Answers box itself,
 not Chrome's own one next to the address bar. Still the old number? The new
 files went into a different folder, or you unzipped an old download. Do
 **every** step of [A](#a-the-one-time-update-versions-below-180) again, with a
-fresh download, and paste into the window that opens from **Loaded from**.
+fresh download, and paste into the window that opens from **Loaded from**,
+even if **Update Quiz Answers** is already in it.
 
 **I clicked "Keep Both" (Mac) or "Skip these files" (Windows) by mistake.**
 Nothing is broken. Do
@@ -411,19 +429,23 @@ accepted, or "could not be executed because you do not have appropriate access
 privileges").** Open **Terminal**: press <kbd>⌘</kbd>+<kbd>Space</kbd>, type
 *Terminal*, and press Return. Type `bash` and a space (type it yourself; do not
 paste it). Drag **Update Quiz Answers.command** from its folder into the
-Terminal window, and press Return. It runs exactly as a double-click would, and
-the Mac does not ask first.
+Terminal window, and press Return. It runs exactly as a double-click would,
+without the "Not Opened" box. (If a box asks whether "Terminal" may access
+files in a folder, click **Allow**.) When it has finished, press Return, then
+close the window with the red dot at its top left.
 
-**Mac: "Operation not permitted".** Open the Apple menu → **System
-Settings** → **Privacy & Security** → **Files & Folders**. Under **Terminal**,
-switch on the folder Quiz Answers is in: **Documents**, **Desktop** or
-**Downloads**. Then try again.
+**Mac: "macOS did not let Terminal open the Quiz Answers folder", or
+"Operation not permitted".** Open the Apple menu → **System Settings** →
+**Privacy & Security** → **Files & Folders**. Under **Terminal**, switch on the
+folder Quiz Answers is in: **Documents**, **Desktop** or **Downloads**. Then
+double-click **Update Quiz Answers** again (or click **Update now**).
 
 **Windows: the window flashes and closes, or says scripts are disabled or
 "restricted".** That PC does not allow scripts, so neither the double-click
 nor the Update now button can work on it. Use the steps in
 [A. The one-time update](#a-the-one-time-update-versions-below-180) for every
-update instead. They work for every version.
+update instead. They work for every version. In Step 4, always paste, even
+though **Update Quiz Answers** is already in the folder.
 
 **Quiz Answers stopped working, and its box says "Turn on developer mode".**
 At the top right of `chrome://extensions`, switch **Developer mode** on. It
