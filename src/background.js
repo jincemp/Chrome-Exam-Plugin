@@ -566,9 +566,17 @@ function stopKeepAlive() {
 
 /* ---------------------------------------------------------------- messages */
 
-chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
+chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   (async () => {
     try {
+      // Restarting and updating are for this extension's own pages to ask
+      // for - its popup and settings - never for a script inside a web page.
+      const fromOwnPage = sender?.id === chrome.runtime.id && String(sender?.url || '').startsWith(chrome.runtime.getURL(''));
+      if ((message?.type === 'restart' || message?.type === 'update') && !fromOwnPage) {
+        sendResponse({ ok: false, error: { message: 'Not allowed from here.' } });
+        return;
+      }
+
       // From the popup's or settings page's restart button, after an update.
       if (message?.type === 'restart') {
         if (running.size) {
@@ -586,19 +594,9 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
         return;
       }
 
-      // The "Update now" button: the helper runs the same updater a
-      // double-click would. Kept alive while it downloads, so it finishes
-      // even if the popup is closed meanwhile.
+      // The "Update now" button.
       if (message?.type === 'update') {
-        startKeepAlive();
-        try {
-          const reply = await chrome.runtime.sendNativeMessage(HELPER, { type: 'update' });
-          sendResponse(reply && typeof reply === 'object' ? reply : { ok: false, error: { message: 'The update helper did not answer.' } });
-        } catch (err) {
-          sendResponse({ ok: false, error: { message: helperProblem(err) } });
-        } finally {
-          stopKeepAlive();
-        }
+        sendResponse(await updateOnce());
         return;
       }
 
@@ -655,6 +653,36 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
 });
 
 /** Chrome's word for what went wrong with the helper, in plainer ones. */
+/*
+ * The "Update now" button: the helper runs the same updater a double-click
+ * would, and answers when it has finished. One run at a time, however many
+ * pages ask - a second click, or the popup and the settings page together, get
+ * the answer of the run already going. Kept alive while it runs, so it
+ * finishes even if the page that asked has closed meanwhile.
+ */
+let updateInFlight = null;
+function updateOnce() {
+  updateInFlight ||= (async () => {
+    startKeepAlive();
+    let reply;
+    try {
+      reply = await chrome.runtime.sendNativeMessage(HELPER, { type: 'update' });
+      if (!reply || typeof reply !== 'object') reply = { ok: false, error: { message: 'The update helper did not answer.' } };
+    } catch (err) {
+      reply = { ok: false, error: { message: helperProblem(err) } };
+    } finally {
+      stopKeepAlive();
+      updateInFlight = null;
+    }
+    // The page that asked may be gone by now: on a Mac the update's Terminal
+    // window takes the focus, and the popup closes with it. So the switch-over
+    // is finished from here - as soon as it would cost nothing.
+    if (reply.ok && /^Updated /.test(reply.summary || '')) restartIfUpdatedWhenIdleSoon();
+    return reply;
+  })();
+  return updateInFlight;
+}
+
 function helperProblem(err) {
   const m = String(err?.message || err || '');
   if (/not found/i.test(m)) return 'The update helper is not set up yet.';

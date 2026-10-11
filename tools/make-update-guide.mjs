@@ -134,13 +134,14 @@ if (!readFileSync(updateJs, 'utf8').includes(realUrl)) throw new Error('src/upda
 writeFileSync(updateJs, readFileSync(updateJs, 'utf8').replace(realUrl, `${origin}/update/manifest.json`));
 
 const profile = path.join(scratch, 'profile');
+const helperHome = path.join(home, 'Library', 'Application Support', 'Quiz Answers');
 const context = await chromium.launchPersistentContext(profile, {
   executablePath: CHROMIUM,
   headless: false,
   args: ['--headless=new', '--no-sandbox', '--hide-scrollbars', `--disable-extensions-except=${extDir}`, `--load-extension=${extDir}`],
   // Chrome hands its environment to the helper it starts: the update it runs
   // downloads from this script, and registers itself in this profile.
-  env: { ...process.env, HOME: home, QUIZ_ANSWERS_ZIP_URL: `${origin}/latest.zip`, QUIZ_ANSWERS_CHROME_DIRS: profile },
+  env: { ...process.env, HOME: home, QUIZ_ANSWERS_ZIP_URL: `${origin}/latest.zip`, QUIZ_ANSWERS_CHROME_DIRS: profile, QUIZ_ANSWERS_HELPER_HOME: helperHome },
   viewport: { width: 980, height: 470 },
   deviceScaleFactor: 2,
 });
@@ -340,25 +341,25 @@ try {
   await popupShot(popup, 'b5-popup-restart.png', '#get-answers', 'Click', 'above');
   await popup.close();
 
-  // C: this version running, its helper registered as the double-click does
-  // it, and a newer one out.
+  // C: this version running, its helper set up by the person's one
+  // double-click (the real updater, with nothing newer to install), and a
+  // newer one out.
   await reloadExtension();
-  mkdirSync(path.join(profile, 'NativeMessagingHosts'), { recursive: true });
-  writeFileSync(path.join(profile, 'NativeMessagingHosts', 'com.jincemp.quiz_answers.json'), JSON.stringify({
-    name: 'com.jincemp.quiz_answers',
-    description: 'Quiz Answers: updates itself when its Update now button is pressed',
-    path: path.join(extDir, 'updater', 'native-host.sh'),
-    type: 'stdio',
-    allowed_origins: [`chrome-extension://${extensionId}/`],
-  }, null, 2));
-
-  // The next release, as GitHub would zip it: this folder at version NEXT.
-  const stage = path.join(scratch, 'next-release');
-  cpSync(extDir, path.join(stage, 'Chrome-Exam-Plugin-main'), { recursive: true });
-  const stagedManifest = path.join(stage, 'Chrome-Exam-Plugin-main', 'manifest.json');
-  writeFileSync(stagedManifest, JSON.stringify({ ...JSON.parse(readFileSync(stagedManifest, 'utf8')), version: NEXT }, null, 2));
-  execFileSync('zip', ['-qr', path.join(stage, 'next.zip'), 'Chrome-Exam-Plugin-main'], { cwd: stage });
-  latestZip = readFileSync(path.join(stage, 'next.zip'));
+  /** A release as GitHub would zip it: this folder at `version`. */
+  const releaseOf = (version) => {
+    const stage = mkdtempSync(path.join(scratch, 'release-'));
+    cpSync(extDir, path.join(stage, 'Chrome-Exam-Plugin-main'), { recursive: true });
+    const staged = path.join(stage, 'Chrome-Exam-Plugin-main', 'manifest.json');
+    writeFileSync(staged, JSON.stringify({ ...JSON.parse(readFileSync(staged, 'utf8')), version }, null, 2));
+    execFileSync('zip', ['-qr', path.join(stage, 'r.zip'), 'Chrome-Exam-Plugin-main'], { cwd: stage });
+    return readFileSync(path.join(stage, 'r.zip'));
+  };
+  latestZip = releaseOf(CURRENT);
+  const setup = await execFileAsync('/bin/bash', [path.join(extDir, 'updater', 'update.sh')], {
+    ...process.env, HOME: home, QUIZ_ANSWERS_ZIP_URL: `${origin}/latest.zip`, QUIZ_ANSWERS_CHROME_DIRS: profile, QUIZ_ANSWERS_HELPER_HOME: helperHome,
+  });
+  if (setup.code !== 0 || !/Update now/.test(setup.out)) throw new Error(`the double-click did not set up the helper:\n${setup.out}`);
+  latestZip = releaseOf(NEXT);
 
   let letDownloadFinish;
   holdDownload = new Promise((resolve) => { letDownloadFinish = resolve; });

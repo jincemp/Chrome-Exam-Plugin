@@ -295,8 +295,10 @@ the popup says so at the bottom, with a button:
 > Version 1.10.0 is out. <u>Update now</u>
 
 Click **Update now**, wait a few seconds, and it restarts onto the new version;
-click the icon again to carry on. The settings page has the same button, and
-it checks for a new version as soon as you open it.
+click the icon again to carry on. On a Mac the update runs in a Terminal
+window, exactly as when you double-click the updater — press Return and close
+it when it says it is done. The settings page has the same button, and it
+checks for a new version as soon as you open it.
 
 **The button has to be switched on once, by a double-click.** Chrome will not
 let an extension change its own files, so the button asks a small helper that
@@ -681,11 +683,17 @@ never update on their own.
   downloads is run; the number is just shown.
 - **Update now** works through Chrome's *native messaging*: the extension can
   start one program that you have registered for it, and nothing else. The
-  updater registers its own helper (`updater/native-host.sh` on a Mac,
-  `updater/native-host.bat` on Windows), for this copy's extension ID only. The
-  helper takes no instructions from the extension beyond "update" — it runs the
-  same updater a double-click runs, which downloads the release from GitHub.
-  That is why the extension asks for the `nativeMessaging` permission.
+  updater registers its own helper, for this copy's extension ID only:
+  `updater/native-host.bat` on Windows, and on a Mac a copy of
+  `updater/native-host.sh` in `~/Library/Application Support/Quiz Answers`.
+  (Chrome starts the helper as a program of its own, which macOS keeps out of
+  Documents, Desktop and Downloads; so on a Mac the helper opens the update in
+  Terminal, which you let into that folder the first time you double-clicked
+  the updater.) The helper takes no instructions from the extension beyond
+  "update": it runs the same updater a double-click runs, which downloads the
+  release from GitHub. That is why the extension asks for the
+  `nativeMessaging` permission. Chrome grants it without asking, because the
+  extension is loaded unpacked.
 
 ## Troubleshooting
 

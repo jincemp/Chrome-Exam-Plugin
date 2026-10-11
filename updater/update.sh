@@ -31,7 +31,11 @@
 #
 # Test hooks, used only by tools/updater-test.mjs and tools/e2e.mjs, inert
 # unless set: QUIZ_ANSWERS_ZIP_URL, _FAIL_AFTER, _FAIL_UNDO, _QUIT_AFTER,
-# _TRACE and _CHROME_DIRS.
+# _TRACE, _CHROME_DIRS and _HELPER_HOME.
+#
+# QUIZ_ANSWERS_REPORT is not a test hook: the "Update now" button's launcher
+# sets it, and everything said then goes to that file too, ending with a
+# "-- done --" line, so the helper Chrome started can tell how the run went.
 
 ZIP_URL="${QUIZ_ANSWERS_ZIP_URL:-https://github.com/jincemp/Chrome-Exam-Plugin/archive/refs/heads/main.zip}"
 APP_NAME='Quiz Answers'
@@ -52,10 +56,17 @@ COUNT=0
 DISCARDED=0
 RECOVERED=0
 
-say() { printf '%s\n' "$*"; }
+REPORT="${QUIZ_ANSWERS_REPORT:-}"
+
+say() {
+  printf '%s\n' "$*"
+  if [ -n "$REPORT" ]; then printf '%s\n' "$*" >>"$REPORT" 2>/dev/null; fi
+}
 
 # Keep the window open long enough to read, when a person is there to read it.
 pause() {
+  # Every way this script ends comes through here, with everything said.
+  if [ -n "$REPORT" ]; then printf '%s\n' '-- done --' >>"$REPORT" 2>/dev/null; fi
   if [ -t 0 ] && [ -t 1 ]; then
     printf '\n'
     read -r -p 'Press Return to close this window. ' _ || true
@@ -158,25 +169,59 @@ write_helper_manifest() {
   } >"$file"
 }
 
-# Registers updater/native-host.sh with Chrome, so the "Update now" button can
-# run this same update. Repeated after every successful run: it rewrites the
-# same small file, which keeps pointing at the helper in this folder. Returns 1
-# if there was nowhere to register it (no Chrome found) - that only means no
-# button, and the double-click still works.
+# Where the "Update now" helper lives: outside this folder, on purpose. macOS
+# guards Documents, Desktop and Downloads, and Chrome starts the helper as a
+# program of its own, which the person has never let in there - so the helper
+# could not even read itself from this folder, let alone change it.
+helper_home() {
+  if [ -n "$QUIZ_ANSWERS_HELPER_HOME" ]; then
+    printf '%s\n' "$QUIZ_ANSWERS_HELPER_HOME" # test hook only
+    return
+  fi
+  case "$(uname -s)" in
+    Darwin) printf '%s\n' "$HOME/Library/Application Support/Quiz Answers" ;;
+    *) printf '%s\n' "${XDG_DATA_HOME:-$HOME/.local/share}/quiz-answers" ;;
+  esac
+}
+
+# Writes $2 to the file $1, executable, by renaming a finished copy into place:
+# a helper or launcher that is running from the old file keeps reading that.
+put_executable() {
+  local tmp="$1.new.$$"
+  if printf '%s' "$2" >"$tmp" 2>/dev/null && chmod 755 "$tmp" && mv -f "$tmp" "$1"; then return 0; fi
+  rm -f "$tmp" 2>/dev/null
+  return 1
+}
+
+# Sets up the "Update now" button: the helper (a copy of updater/native-host.sh)
+# and the launcher it opens - in Terminal on a Mac, so the update runs exactly
+# as a double-click on "Update Quiz Answers" does, where macOS lets it change
+# this folder - and the small file that tells Chrome about the helper, for this
+# copy of Quiz Answers alone. Repeated after every run, so all of it stays up
+# to date and points at this folder. Returns 1 if there was nowhere to register
+# (no Chrome found): that only means no button, and the double-click still works.
 install_helper() {
-  local helper="$DIR/updater/native-host.sh" ids dir registered=1
-  [ -f "$helper" ] || return 1
-  chmod +x "$helper" 2>/dev/null
-  # Chrome starts the helper itself, and a download's "from the internet" mark
-  # would only stand in its way. This is the person's own copy, which they
-  # have just chosen to update.
-  xattr -d com.apple.quarantine "$helper" 2>/dev/null
+  local home ids dir registered=1
+  [ -f "$DIR/updater/native-host.sh" ] || return 1
   ids="$(extension_ids "$DIR")"
   [ -n "$ids" ] || return 1
+  home="$(helper_home)"
+  mkdir -p "$home" 2>/dev/null || return 1
+  # Read and written rather than copied: cp would carry over a download's
+  # "from the internet" mark, and Chrome could not start the helper.
+  put_executable "$home/native-host.sh" "$(cat "$DIR/updater/native-host.sh")
+" || return 1
+  put_executable "$home/Update Quiz Answers.command" "#!/bin/bash
+# Opened by the \"Update now\" button of Quiz Answers, so that its update runs
+# just as a double-click on \"Update Quiz Answers\" in its folder would. Written
+# by that folder's updater, and rewritten each time it runs.
+export QUIZ_ANSWERS_REPORT=$(printf '%q' "$home/last-update")
+exec /bin/bash $(printf '%q' "$DIR/updater/update.sh")
+" || return 1
   while IFS= read -r dir; do
     [ -n "$dir" ] && [ -d "$dir" ] || continue
     mkdir -p "$dir/NativeMessagingHosts" 2>/dev/null || continue
-    write_helper_manifest "$dir/NativeMessagingHosts/$HELPER_NAME.json" "$helper" "$ids" 2>/dev/null || continue
+    write_helper_manifest "$dir/NativeMessagingHosts/$HELPER_NAME.json" "$home/native-host.sh" "$ids" 2>/dev/null || continue
     registered=0
   done < <(chrome_dirs)
   return $registered

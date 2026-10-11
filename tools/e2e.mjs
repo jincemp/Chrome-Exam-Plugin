@@ -1302,10 +1302,12 @@ try {
     latestZip = readFileSync(path.join(stage, 'r.zip'));
     rmSync(stage, { recursive: true, force: true });
   };
+  // Where a Mac keeps the helper, outside the extension's folder.
+  const helperHome = mkdtempSync(path.join(tmpdir(), 'quiz-helper-'));
   const runSetup = () => new Promise((resolve) => {
     // The person's one double-click: nothing new to install, so it only registers the helper.
     const child = spawn('/bin/bash', [path.join(extDir, 'updater', 'update.sh')], {
-      env: { ...process.env, QUIZ_ANSWERS_ZIP_URL: `${origin}/latest.zip`, QUIZ_ANSWERS_CHROME_DIRS: userDataDir },
+      env: { ...process.env, QUIZ_ANSWERS_ZIP_URL: `${origin}/latest.zip`, QUIZ_ANSWERS_CHROME_DIRS: userDataDir, QUIZ_ANSWERS_HELPER_HOME: helperHome },
       stdio: ['ignore', 'pipe', 'pipe'],
     });
     let out = '';
@@ -1375,7 +1377,39 @@ try {
     assert.deepEqual(afterButtonErrors, []);
   });
 
+  // On a Mac the update runs in a Terminal window, which takes the focus, and
+  // the popup closes while the helper is still at work. The switch-over then
+  // has to come from the extension itself.
+  const lastVersion = '99.2.0';
+  buildRelease(lastVersion);
+  published = lastVersion;
+  for (const w of context.serviceWorkers().filter((x) => x.url().includes(extensionId)).reverse()) {
+    try { await w.evaluate(() => chrome.storage.local.remove('updateCheck')); break; } catch { /* gone */ }
+  }
+  const shortLived = await openPopupFor(quizTabId);
+  await shortLived.waitForFunction(() => document.getElementById('update-action')?.textContent === 'Update now', null, { timeout: 15000 }).catch(() => {});
+  await shortLived.click('#update-action').catch(() => {});
+  await shortLived.close();
+  let afterClosed = null;
+  for (let i = 0; i < 160 && afterClosed?.version !== lastVersion; i++) {
+    await new Promise((r) => setTimeout(r, 250));
+    for (const w of context.serviceWorkers().filter((x) => x.url().includes(extensionId)).reverse()) {
+      try {
+        afterClosed = await w.evaluate(async () => ({ version: chrome.runtime.getManifest().version, apiKey: (await chrome.storage.local.get('apiKey')).apiKey }));
+        break;
+      } catch { /* gone */ }
+    }
+  }
+  const afterClosedErrors = await registrationErrors();
+
+  check('with the popup closed mid-update, as on a Mac, it still switches over by itself', () => {
+    assert.equal(afterClosed?.version, lastVersion, `still ${afterClosed?.version}`);
+    assert.equal(afterClosed?.apiKey, 'sk-test-key');
+    assert.deepEqual(afterClosedErrors, []);
+  });
+
   await devPage.close();
+  rmSync(helperHome, { recursive: true, force: true });
 } finally {
   await context.close();
   server.close();

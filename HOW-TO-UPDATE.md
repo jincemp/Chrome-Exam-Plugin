@@ -317,33 +317,39 @@ that page, so leave **Restart now (clears answers)** alone.
 
 ### Step 1. Click "Update now"
 
-1. Click a tab with an ordinary website in it, then click the Quiz Answers
-   icon. When a new version is out, the bottom of the box says so. Click
-   **Update now**.
+Click a tab with an ordinary website in it, then click the Quiz Answers icon.
+When a new version is out, the bottom of the box says so. Click **Update now**.
 
-   <img src="docs/how-to-update/c1-update-now.png" width="340" alt="The Quiz Answers box. At the bottom: Version 1.10.0 is out. The Update now button next to it is ringed.">
+<img src="docs/how-to-update/c1-update-now.png" width="340" alt="The Quiz Answers box. At the bottom: Version 1.10.0 is out. The Update now button next to it is ringed.">
 
-   - **No line about a new version?** Then you already have the newest one.
-     (It checks about once an hour. To check right now, right-click the Quiz
-     Answers icon and choose **Options**: the settings page asks straight
-     away, and has the same **Update now** button.)
-   - **It says to double-click "Update Quiz Answers" instead?** The button is
-     not switched on yet: do
-     [B. Switch on the Update button](#b-switch-on-the-update-button-once)
-     once.
+- **No line about a new version?** Then you already have the newest one. (It
+  checks about once an hour. To check right now, right-click the Quiz Answers
+  icon and choose **Options**: the settings page asks straight away, and has
+  the same **Update now** button.)
+- **It says to double-click "Update Quiz Answers" instead?** The button is not
+  switched on yet: do
+  [B. Switch on the Update button](#b-switch-on-the-update-button-once) once.
 
-2. It says **Updating to …**. Wait a few seconds.
+### Step 2. Let it update
 
-   <img src="docs/how-to-update/c2-updating.png" width="340" alt="The Quiz Answers box, saying: Updating to 1.10.0… this takes a few seconds.">
+**On Windows**, the box says **Updating to …** for a few seconds, then
+**Restarting…**, and closes by itself.
 
-3. It says **Restarting… click the icon again in a moment**, and the box
-   closes by itself. Click the Quiz Answers icon again.
+<img src="docs/how-to-update/c2-updating.png" width="340" alt="The Quiz Answers box, saying: Updating to 1.10.0… this takes a few seconds.">
 
-   <img src="docs/how-to-update/c3-restarting.png" width="340" alt="The Quiz Answers box, saying: Updated Quiz Answers from 1.9.0 to 1.10.0. Restarting… click the icon again in a moment.">
+<img src="docs/how-to-update/c3-restarting.png" width="340" alt="The Quiz Answers box, saying: Updated Quiz Answers from 1.9.0 to 1.10.0. Restarting… click the icon again in a moment.">
 
-✅ **Done!**
+**On a Mac**, a Terminal window opens and does the update, just as in B. When
+it says **"Updated Quiz Answers from … to …"**, press **Return**, then close
+the window with the red dot at its top left. (If a box asks whether
+**"Terminal"** may access files in a folder, click **Allow**.)
 
-<!-- mac-first-click -->
+<img src="docs/how-to-update/mac-terminal.png" width="560" alt="Example of the Terminal window when it has finished: Updated Quiz Answers from 1.9.0 to 1.10.0. Then: Press Return to close this window.">
+
+### Step 3. Click the icon again
+
+Click the Quiz Answers icon again. ✅ **Done!** It has switched to the new
+version by itself.
 
 Does the bottom of the box say the new version **switches over by itself once
 you close or leave the page with answers**? Then you are done too: it finishes
@@ -409,9 +415,9 @@ Terminal window, and press Return. It runs exactly as a double-click would, and
 the Mac does not ask first.
 
 **Mac: "Operation not permitted".** Open the Apple menu → **System
-Settings** → **Privacy & Security** → **Files & Folders**. Under **Terminal**
-(and, for the Update now button, **Google Chrome**), switch on the folder Quiz
-Answers is in: **Documents**, **Desktop** or **Downloads**. Then try again.
+Settings** → **Privacy & Security** → **Files & Folders**. Under **Terminal**,
+switch on the folder Quiz Answers is in: **Documents**, **Desktop** or
+**Downloads**. Then try again.
 
 **Windows: the window flashes and closes, or says scripts are disabled or
 "restricted".** That PC does not allow scripts, so neither the double-click
