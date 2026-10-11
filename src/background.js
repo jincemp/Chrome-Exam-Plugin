@@ -7,7 +7,7 @@
 
 import { answerQuestions, OpenAIError, TruncatedError } from './openai.js';
 import { clearJob, getJob, getSettings, pageKey, setJob } from './storage.js';
-import { answersHeld, readyToRestart, restartIfUpdated } from './update.js';
+import { answersHeld, HELPER, readyToRestart, restartIfUpdated } from './update.js';
 
 /*
  * A whole page in one request wherever it fits. Splitting is not free accuracy-
@@ -586,6 +586,22 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
         return;
       }
 
+      // The "Update now" button: the helper runs the same updater a
+      // double-click would. Kept alive while it downloads, so it finishes
+      // even if the popup is closed meanwhile.
+      if (message?.type === 'update') {
+        startKeepAlive();
+        try {
+          const reply = await chrome.runtime.sendNativeMessage(HELPER, { type: 'update' });
+          sendResponse(reply && typeof reply === 'object' ? reply : { ok: false, error: { message: 'The update helper did not answer.' } });
+        } catch (err) {
+          sendResponse({ ok: false, error: { message: helperProblem(err) } });
+        } finally {
+          stopKeepAlive();
+        }
+        return;
+      }
+
       if (!Number.isInteger(message?.tabId)) {
         sendResponse({ ok: false, error: { message: 'Missing tab.' } });
         return;
@@ -637,6 +653,15 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
   })();
   return true; // keeps the response channel open for the async work above
 });
+
+/** Chrome's word for what went wrong with the helper, in plainer ones. */
+function helperProblem(err) {
+  const m = String(err?.message || err || '');
+  if (/not found/i.test(m)) return 'The update helper is not set up yet.';
+  if (/forbidden/i.test(m)) return 'The update helper belongs to another copy of Quiz Answers.';
+  if (/exited/i.test(m)) return 'The update helper stopped before it finished.';
+  return m || 'The update helper did not work.';
+}
 
 /* ------------------------------------------------------------ tab lifecycle */
 

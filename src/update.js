@@ -18,8 +18,15 @@
 /** Where the published version number lives. tools/e2e.mjs points this at its mock. */
 export const UPDATE_MANIFEST_URL = 'https://raw.githubusercontent.com/jincemp/Chrome-Exam-Plugin/main/manifest.json';
 
-/** Often enough to hear about a fix the same day; rarely enough not to be noticed. */
-const CHECK_EVERY_MS = 6 * 60 * 60 * 1000;
+/** Often enough to hear about a fix within the hour; one tiny request each time. */
+const CHECK_EVERY_MS = 60 * 60 * 1000;
+
+/**
+ * The helper "Update Quiz Answers" registers the first time it runs
+ * (updater/native-host.sh, or native-host.bat on Windows). Through it, the
+ * "Update now" button runs that same updater.
+ */
+export const HELPER = 'com.jincemp.quiz_answers';
 
 /**
  * A restart that does not take - Developer mode switched off leaves the
@@ -161,6 +168,30 @@ export async function pendingRestart() {
 export async function answersHeld() {
   const all = await chrome.storage.session.get(null);
   return Object.entries(all).filter(([key, job]) => key.startsWith('job:') && job?.status === 'done').length;
+}
+
+/** Is the helper registered, and does it answer? false whenever in doubt. */
+export async function helperReady() {
+  try {
+    const reply = await chrome.runtime.sendNativeMessage(HELPER, { type: 'ping' });
+    return reply?.ok === true;
+  } catch {
+    return false; // not registered yet, or blocked
+  }
+}
+
+/**
+ * Runs the updater through the helper, from the service worker, so it carries
+ * on if the popup closes. Resolves to the helper's reply:
+ * {ok, summary} - summary is the updater's own line, such as
+ * "Updated Quiz Answers from 1.8.1 to 1.9.0." - or {ok: false, error}.
+ */
+export async function updateNow() {
+  try {
+    return (await chrome.runtime.sendMessage({ type: 'update' })) || { ok: false };
+  } catch (e) {
+    return { ok: false, error: { message: e?.message || 'Quiz Answers is not responding.' } };
+  }
 }
 
 /**

@@ -29,11 +29,14 @@
 # it goes. So everything is in functions and the work starts on the last line:
 # bash has read all of it before any of it runs.
 #
-# Test hooks, used only by tools/updater-test.mjs and inert unless set:
-# QUIZ_ANSWERS_ZIP_URL, _FAIL_AFTER, _FAIL_UNDO, _QUIT_AFTER and _TRACE.
+# Test hooks, used only by tools/updater-test.mjs and tools/e2e.mjs, inert
+# unless set: QUIZ_ANSWERS_ZIP_URL, _FAIL_AFTER, _FAIL_UNDO, _QUIT_AFTER,
+# _TRACE and _CHROME_DIRS.
 
 ZIP_URL="${QUIZ_ANSWERS_ZIP_URL:-https://github.com/jincemp/Chrome-Exam-Plugin/archive/refs/heads/main.zip}"
 APP_NAME='Quiz Answers'
+# The name Quiz Answers asks Chrome for when its "Update now" button is pressed.
+HELPER_NAME='com.jincemp.quiz_answers'
 
 # Globals, not locals: the EXIT trap and the rollback both need them, and they
 # must not depend on which function happens to be running when the trap fires.
@@ -80,6 +83,90 @@ newer() {
     [ "${x:-0}" -lt "${y:-0}" ] && return 1
   done
   return 1
+}
+
+# $1 as a JSON string: quotes, backslashes and control characters escaped.
+json_string() {
+  local s TAB=$'\t'
+  s="$(printf '%s' "$1" | tr -d '\000-\010\013\014\016-\037')"
+  s="${s//\\/\\\\}"
+  s="${s//\"/\\\"}"
+  s="${s//$TAB/\\t}"
+  s="${s//$'\r'/}"
+  s="${s//$'\n'/\\n}"
+  printf '"%s"' "$s"
+}
+
+# The ID Chrome gives an extension loaded unpacked from folder $1: the first
+# half of the SHA-256 of its path, written with the letters a to p.
+extension_id() {
+  local sum
+  if command -v shasum >/dev/null 2>&1; then
+    sum="$(printf '%s' "$1" | shasum -a 256)"
+  else
+    sum="$(printf '%s' "$1" | sha256sum)"
+  fi
+  printf '%s' "${sum:0:32}" | tr '0-9a-f' 'a-p'
+}
+
+# Chrome's own folders on this computer, one per line. The helper is
+# registered in each one that exists.
+chrome_dirs() {
+  if [ -n "$QUIZ_ANSWERS_CHROME_DIRS" ]; then
+    printf '%s\n' "$QUIZ_ANSWERS_CHROME_DIRS" | tr ':' '\n' # test hook only
+    return
+  fi
+  case "$(uname -s)" in
+    Darwin) printf '%s\n' "$HOME/Library/Application Support/Google/Chrome" "$HOME/Library/Application Support/Chromium" ;;
+    *) printf '%s\n' "$HOME/.config/google-chrome" "$HOME/.config/chromium" ;;
+  esac
+}
+
+# Writes the small file that tells Chrome where the helper is, and that only
+# this copy of Quiz Answers may start it.
+write_helper_manifest() {
+  local file="$1" helper="$2" id="$3"
+  {
+    printf '{\n'
+    printf '  "name": "%s",\n' "$HELPER_NAME"
+    printf '  "description": "Quiz Answers: updates itself when its Update now button is pressed",\n'
+    printf '  "path": %s,\n' "$(json_string "$helper")"
+    printf '  "type": "stdio",\n'
+    printf '  "allowed_origins": ["chrome-extension://%s/"]\n' "$id"
+    printf '}\n'
+  } >"$file"
+}
+
+# Registers updater/native-host.sh with Chrome, so the "Update now" button can
+# run this same update. Repeated after every successful run: it rewrites the
+# same small file, which keeps pointing at the helper in this folder. Returns 1
+# if there was nowhere to register it (no Chrome found) - that only means no
+# button, and the double-click still works.
+install_helper() {
+  local helper="$DIR/updater/native-host.sh" id dir registered=1
+  [ -f "$helper" ] || return 1
+  chmod +x "$helper" 2>/dev/null
+  # Chrome starts the helper itself, and a download's "from the internet" mark
+  # would only stand in its way. This is the person's own copy, which they
+  # have just chosen to update.
+  xattr -d com.apple.quarantine "$helper" 2>/dev/null
+  id="$(extension_id "$DIR")"
+  while IFS= read -r dir; do
+    [ -n "$dir" ] && [ -d "$dir" ] || continue
+    mkdir -p "$dir/NativeMessagingHosts" 2>/dev/null || continue
+    write_helper_manifest "$dir/NativeMessagingHosts/$HELPER_NAME.json" "$helper" "$id" 2>/dev/null || continue
+    registered=0
+  done < <(chrome_dirs)
+  return $registered
+}
+
+# Registers the helper, and says what that means for next time.
+announce_helper() {
+  if install_helper; then
+    say ''
+    say 'From now on Quiz Answers can update itself: when a new version is out,'
+    say 'click "Update now" in its window.'
+  fi
 }
 
 # True when $1 is a folder with anything in it.
@@ -241,6 +328,7 @@ main() {
   if ! newer "$latest" "${CURRENT:-0}"; then
     say ''
     say "You already have the latest version ($CURRENT)."
+    announce_helper
     pause
     exit 0
   fi
@@ -276,6 +364,7 @@ main() {
   say 'the new version by itself; if it shows "Restart to finish", click that.'
   say 'Keep "Developer mode" on at chrome://extensions - Quiz Answers only runs'
   say 'while it is on.'
+  announce_helper
   pause
   exit 0
 }

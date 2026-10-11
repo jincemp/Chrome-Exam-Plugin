@@ -48,7 +48,8 @@
   .dots { display: flex; gap: 7px; }
   .dots i { width: 12px; height: 12px; border-radius: 50%; background: #c4c7cc; display: block; }
   .mac-title { flex: 1; text-align: center; font-weight: 600; font-size: 13px; color: #3b3f45; margin-right: 46px; }
-  .mac-path { font-size: 11.5px; color: var(--muted); padding: 6px 14px; border-top: 1px solid #e3e4e7; background: #f7f7f8; border-radius: 0 0 11px 11px; }
+  .caption { margin-top: 12px; font: 600 12.5px/1.4 Inter, sans-serif; color: var(--muted); max-width: 560px; }
+  .caption b { color: var(--ink); }
   .grid { display: grid; grid-template-columns: repeat(5, 1fr); gap: 14px 6px; padding: 18px 14px 20px; }
   .item { display: flex; flex-direction: column; align-items: center; gap: 6px; text-align: center; font-size: 12px; padding: 4px 2px; border-radius: 6px; }
   .item.sel { background: #dbe7fb; }
@@ -172,18 +173,30 @@
     <div class="mac-bar"><span class="dots"><i></i><i></i><i></i></span><span class="mac-title">Downloads</span></div>
     <div class="grid">
       <div class="item"><span class="icon file zip" data-kind="ZIP"></span>Chrome-Exam-Plugin-main.zip</div>
-      <div class="item sel hl"><span class="icon folder"></span>Chrome-Exam-Plugin-main<span class="tag below">The new version</span></div>
+      <div class="item sel hl"><span class="icon folder"></span>Chrome-Exam-Plugin-main<span class="tag below">The new folder: double-click it</span></div>
     </div>
-    <div class="mac-path">Double-click the .zip, and the folder next to it appears.</div>
+    <div style="height: 30px;"></div>
   </div>
+  <div class="caption">Double-click the .zip, and the folder appears next to it.</div>
 </figure>
 
 <!-- 1. Mac: the folder Chrome opened (old version) -->
-<figure id="mac-old-folder">
+
+
+<figure id="mac-new-folder">
   <div class="mac-win">
     <div class="mac-bar"><span class="dots"><i></i><i></i><i></i></span><span class="mac-title">Chrome-Exam-Plugin-main</span></div>
-    <div class="grid" data-tree="old" data-os="mac"></div>
-    <div class="mac-path">Documents ▸ Chrome Extensions ▸ Chrome-Exam-Plugin-main &nbsp;·&nbsp; the folder Chrome uses</div>
+    <div class="grid" data-tree="new" data-os="mac" data-mark="Update Quiz Answers.command" data-mark-label="This file means it is the new version"></div>
+    <div style="height: 30px;"></div>
+  </div>
+</figure>
+
+<figure id="win-new-folder">
+  <div class="win">
+    <div class="win-bar"><span class="t">Chrome-Exam-Plugin-main</span><span class="x">✕</span></div>
+    <div class="crumbs">Downloads › Chrome-Exam-Plugin-main › Chrome-Exam-Plugin-main</div>
+    <table class="list" data-tree="new" data-os="win" data-mark="Update Quiz Answers.bat" data-mark-label="This file means it is the new version"></table>
+    <div style="height: 10px;"></div>
   </div>
 </figure>
 
@@ -202,8 +215,8 @@
     <div class="mac-win" style="border-radius: 0 0 11px 11px;">
       <div class="mac-bar" style="border-radius: 0;"><span class="dots"><i></i><i></i><i></i></span><span class="mac-title">Chrome-Exam-Plugin-main</span></div>
       <div class="grid" data-tree="new" data-os="mac" data-select="all"></div>
-      <div class="mac-path">Downloads ▸ Chrome-Exam-Plugin-main &nbsp;·&nbsp; the NEW folder</div>
     </div>
+    <div class="caption">The <b>new</b> folder, with everything selected.</div>
   </div>
 </figure>
 
@@ -222,8 +235,8 @@
     <div class="mac-win" style="border-radius: 0 0 11px 11px;">
       <div class="mac-bar" style="border-radius: 0;"><span class="dots"><i></i><i></i><i></i></span><span class="mac-title">Chrome-Exam-Plugin-main</span></div>
       <div class="grid" data-tree="old" data-os="mac"></div>
-      <div class="mac-path">Documents ▸ Chrome Extensions ▸ Chrome-Exam-Plugin-main &nbsp;·&nbsp; the OLD folder, from step 1</div>
     </div>
+    <div class="caption">The folder that opened from <b>Loaded from</b>: the one Chrome uses.</div>
   </div>
 </figure>
 
@@ -291,8 +304,8 @@
     <p>Apple is not able to verify that it is free from malware that could harm your Mac or compromise your privacy.</p>
     <span class="mac-btn primary hl">Open Anyway<span class="tag right">Click</span></span>
     <span class="mac-btn">Done</span>
-    <p style="margin: 14px 0 0; font-size: 11.5px; color: var(--muted);">Then type your Mac password (or use Touch ID).</p>
   </div>
+  <div class="caption">Then type your Mac password, or use Touch ID.</div>
 </figure>
 
 <!-- B3. Mac, first time: Terminal asks for the folder -->
@@ -357,28 +370,36 @@
 </figure>
 
 <!-- A1. Windows: the folder Chrome opened (old version) -->
-<figure id="win-old-folder">
-  <div class="win">
-    <div class="win-bar"><span class="t">Chrome-Exam-Plugin-main</span><span class="x">✕</span></div>
-    <div class="crumbs">Documents › Chrome Extensions › Chrome-Exam-Plugin-main &nbsp;·&nbsp; the folder Chrome uses</div>
-    <table class="list" data-tree="old" data-os="win"></table>
-  </div>
-</figure>
+
 
 <!-- A4. Windows: copy everything from the NEW folder -->
 <figure id="win-copy">
   <div class="win">
     <div class="win-bar"><span class="t">Chrome-Exam-Plugin-main</span><span class="x">✕</span></div>
-    <div class="crumbs">Downloads › Chrome-Exam-Plugin-main › Chrome-Exam-Plugin-main &nbsp;·&nbsp; the NEW folder</div>
+    <div class="crumbs">Downloads › Chrome-Exam-Plugin-main › Chrome-Exam-Plugin-main</div>
     <table class="list" data-tree="new" data-os="win" data-select="all"></table>
-    <div style="padding: 14px 12px 12px; display: flex; gap: 40px; border-top: 1px solid #eee; margin-top: 22px;">
-      <span class="keys hl">Select all: <kbd>Ctrl</kbd>+<kbd>A</kbd><span class="tag above">1.</span></span>
-      <span class="keys hl">Copy: <kbd>Ctrl</kbd>+<kbd>C</kbd><span class="tag above">2.</span></span>
-    </div>
+  </div>
+  <div class="caption" style="display: flex; gap: 26px; margin-top: 16px;">
+    <span class="keys">1. Hold <kbd>Ctrl</kbd> and press <kbd>A</kbd>: everything turns blue.</span>
+    <span class="keys">2. Hold <kbd>Ctrl</kbd> and press <kbd>C</kbd>.</span>
   </div>
 </figure>
 
-<!-- A4. Windows: paste into the OLD folder, and replace -->
+<!-- A4. Windows: paste into the folder Chrome uses -->
+<figure id="win-paste">
+  <div class="win">
+    <div class="win-bar"><span class="t">Chrome-Exam-Plugin-main</span><span class="x">✕</span></div>
+    <div class="crumbs">Documents › Chrome Extensions › Chrome-Exam-Plugin-main</div>
+    <table class="list" data-tree="old" data-os="win"></table>
+    <div style="height: 10px;"></div>
+  </div>
+  <div class="caption" style="display: flex; gap: 26px; margin-top: 16px;">
+    <span>The folder that opened from <b>Loaded from</b>.</span>
+    <span class="keys">Click an empty spot, then hold <kbd>Ctrl</kbd> and press <kbd>V</kbd>.</span>
+  </div>
+</figure>
+
+<!-- A4. Windows: the replace question -->
 <figure id="win-replace">
   <div class="win" style="width: 470px;">
     <div class="win-bar"><span class="t">Replace or Skip Files</span><span class="x">✕</span></div>
@@ -387,7 +408,7 @@
       <div style="font-size: 16px; margin: 12px 0 14px;">The destination has <span data-count="same"></span> files with the same names</div>
       <div class="hl" style="padding: 8px 10px;">✓ &nbsp;Replace the files in the destination<span class="tag right">Click</span></div>
       <div style="padding: 8px 10px; color: #444;">↷ &nbsp;Skip these files</div>
-      <div style="padding: 8px 10px; color: #444;">⧉ &nbsp;Let me decide for each file</div>
+      <div style="padding: 8px 10px; color: #444;">⧉ &nbsp;Compare info for both files</div>
     </div>
   </div>
 </figure>
@@ -486,7 +507,7 @@
         const node = win ? winRow(e, opts) : macItem(e, opts);
         if (e.name === host.dataset.mark) {
           node.classList.add('hl', 'sel');
-          (win ? node.children[1] : node).append(tag(win ? 'Double-click this one' : 'Double-click', win ? 'right' : 'below'));
+          (win ? node.children[1] : node).append(tag(host.dataset.markLabel || (win ? 'Double-click this one' : 'Double-click'), win ? 'right' : 'below'));
         }
         if (e.name === host.dataset.avoid) {
           node.classList.add('no');

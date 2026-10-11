@@ -1019,13 +1019,13 @@ await test('update: same or older on GitHub is not offered', async () => {
   }
 });
 
-await test('update: GitHub is asked at most every few hours', async () => {
+await test('update: GitHub is asked at most once an hour', async () => {
   const gh = github('1.8.0');
   await withFakes({}, async () => {
     await checkForUpdate({ fetchImpl: gh.impl, now: 0 });
-    const again = await checkForUpdate({ fetchImpl: gh.impl, now: 2 * HOUR });
+    const again = await checkForUpdate({ fetchImpl: gh.impl, now: 50 * 60 * 1000 });
     assert.equal(again.available, true, 'the cached answer still says an update is out');
-    await checkForUpdate({ fetchImpl: gh.impl, now: 7 * HOUR });
+    await checkForUpdate({ fetchImpl: gh.impl, now: 61 * 60 * 1000 });
   });
   assert.equal(gh.calls.length, 2, 'once at the start and once after the window, not on every popup open');
 });
@@ -1044,7 +1044,7 @@ await test('update: a missing file on GitHub is not re-requested on every open',
   await withFakes({}, async () => {
     const r = await checkForUpdate({ fetchImpl: gh.impl, now: 0 });
     assert.equal(r.available, false);
-    await checkForUpdate({ fetchImpl: gh.impl, now: HOUR });
+    await checkForUpdate({ fetchImpl: gh.impl, now: 30 * 60 * 1000 });
   });
   assert.equal(gh.calls.length, 1);
 });

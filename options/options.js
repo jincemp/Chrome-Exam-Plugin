@@ -1,6 +1,6 @@
 import { DEFAULT_SETTINGS, getSettings, isInsecureBase, setSettings } from '../src/storage.js';
 import { listModels } from '../src/openai.js';
-import { answersHeld, checkForUpdate, pendingRestart, requestRestart } from '../src/update.js';
+import { answersHeld, checkForUpdate, helperReady, pendingRestart, requestRestart, updateNow } from '../src/update.js';
 
 const $ = (id) => document.getElementById(id);
 
@@ -107,10 +107,30 @@ async function showUpdate() {
     $('update-status').hidden = false;
     return;
   }
-  const { available, latest } = await checkForUpdate();
+  // Opening settings is deliberate, and rare: always ask GitHub afresh here.
+  const { available, latest } = await checkForUpdate({ force: true });
   if (!available) return;
-  $('update-status-text').textContent =
-    `Version ${latest} is out. To get it, double-click "Update Quiz Answers" in this extension's folder.`;
+  const text = $('update-status-text');
+  const button = $('update-restart');
+  if (!(await helperReady())) {
+    text.textContent = `Version ${latest} is out. To get it, double-click "Update Quiz Answers" in this extension's folder. After that, this becomes an "Update now" button.`;
+    $('update-status').hidden = false;
+    return;
+  }
+  text.textContent = `Version ${latest} is out.`;
+  button.textContent = 'Update now';
+  button.hidden = false;
+  button.onclick = async () => {
+    button.disabled = true;
+    text.textContent = `Updating to ${latest}… this takes a few seconds.`;
+    const res = await updateNow();
+    button.disabled = false;
+    if (res?.ok && /^Updated /.test(res.summary || '')) return showUpdate(); // now "installed", with its restart button
+    button.hidden = Boolean(res?.ok);
+    text.textContent = res?.ok
+      ? (res.summary || 'You already have the latest version.')
+      : `${res?.summary || res?.error?.message || 'The update did not work.'} You can still double-click "Update Quiz Answers" in this extension's folder.`;
+  };
   $('update-status').hidden = false;
 }
 

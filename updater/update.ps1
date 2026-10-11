@@ -13,8 +13,8 @@
 # order mark as the local code page, and mangles anything else.
 #
 # Test hooks, used only by tools/updater-test.mjs and inert unless set:
-# QUIZ_ANSWERS_ZIP_URL, _FAIL_AFTER, _FAIL_UNDO, _QUIT_AFTER, _TRACE and
-# _ONEDRIVE.
+# QUIZ_ANSWERS_ZIP_URL, _FAIL_AFTER, _FAIL_UNDO, _QUIT_AFTER, _TRACE,
+# _ONEDRIVE and _NATIVE_DIR.
 
 # First, and in plain commands only. Where an App Control policy - Smart App
 # Control, or one an organisation sets - has not approved this script, Windows
@@ -37,6 +37,9 @@ $ProgressPreference = 'SilentlyContinue'   # the progress bar makes downloads ma
 
 $ZipUrl = if ($env:QUIZ_ANSWERS_ZIP_URL) { $env:QUIZ_ANSWERS_ZIP_URL } else { 'https://github.com/jincemp/Chrome-Exam-Plugin/archive/refs/heads/main.zip' }
 $AppName = 'Quiz Answers'
+# The name Quiz Answers asks Chrome for when its "Update now" button is pressed.
+$HelperName = 'com.jincemp.quiz_answers'
+$script:OnWindows = $env:OS -eq 'Windows_NT'
 
 # PowerShell names are case-insensitive, so none of these may share a name
 # with a variable used anywhere else in the script: $Latest and $latest would
@@ -221,6 +224,70 @@ function Restore-InterruptedRun {
   return $true
 }
 
+# The ID Chrome gives an extension loaded unpacked from folder $path: the first
+# half of the SHA-256 of the path, written with the letters a to p. Windows
+# Chrome hashes the path as UTF-16 with the drive letter in capitals; Chrome
+# elsewhere hashes the UTF-8 bytes.
+function Get-ExtensionId([string]$path) {
+  if ($script:OnWindows) {
+    if ($path -match '^[a-z]:') { $path = $path.Substring(0, 1).ToUpper() + $path.Substring(1) }
+    $bytes = [Text.Encoding]::Unicode.GetBytes($path)
+  } else {
+    $bytes = [Text.Encoding]::UTF8.GetBytes($path)
+  }
+  $hash = [Security.Cryptography.SHA256]::Create().ComputeHash($bytes)
+  $id = ''
+  foreach ($b in $hash[0..15]) {
+    $id += [char](97 + ($b -shr 4)) + [char](97 + ($b -band 15))
+  }
+  return $id
+}
+
+# Registers updater\native-host.bat with Chrome, for this copy of Quiz Answers
+# alone, so its "Update now" button can run this same update. Repeated after
+# every successful run, which keeps it pointing at the helper in this folder.
+# Never throws: no registration only means no button, and the double-click
+# still works. Returns $true when registered.
+function Install-Helper {
+  try {
+    $helper = Join-Path $script:Dir 'updater\native-host.bat'
+    if (-not (Test-Path -LiteralPath $helper)) { return $false }
+    try { Unblock-File -LiteralPath $helper -ErrorAction SilentlyContinue } catch { }
+    try { Unblock-File -LiteralPath (Join-Path $script:Dir 'updater\native-host.ps1') -ErrorAction SilentlyContinue } catch { }
+    $id = Get-ExtensionId $script:Dir
+    # QUIZ_ANSWERS_NATIVE_DIR is a test hook; Windows has no folder Chrome
+    # searches, only the registry entry that names this file.
+    $where = if ($env:QUIZ_ANSWERS_NATIVE_DIR) { $env:QUIZ_ANSWERS_NATIVE_DIR } else { Join-Path $env:LOCALAPPDATA 'Quiz Answers' }
+    [void](New-Item -ItemType Directory -Force -Path $where)
+    $file = Join-Path $where "$HelperName.json"
+    $manifest = [ordered]@{
+      name = $HelperName
+      description = 'Quiz Answers: updates itself when its Update now button is pressed'
+      path = $helper
+      type = 'stdio'
+      allowed_origins = @("chrome-extension://$id/")
+    }
+    [IO.File]::WriteAllText($file, ($manifest | ConvertTo-Json), (New-Object Text.UTF8Encoding $false))
+    if ($script:OnWindows -and -not $env:QUIZ_ANSWERS_NATIVE_DIR) {
+      $key = "HKCU:\Software\Google\Chrome\NativeMessagingHosts\$HelperName"
+      [void](New-Item -Path $key -Force)
+      Set-Item -Path $key -Value $file
+    }
+    return $true
+  } catch {
+    return $false
+  }
+}
+
+# Registers the helper, and says what that means for next time.
+function Show-HelperReady {
+  if (Install-Helper) {
+    Write-Host ''
+    Write-Host 'From now on Quiz Answers can update itself: when a new version is out,'
+    Write-Host 'click "Update now" in its window.'
+  }
+}
+
 # Anything not handled below still gets explained, in a window that stays open
 # long enough to read it. Without this, the window just closes. A trap covers
 # the whole script but a function exists only once its definition has run, so
@@ -310,6 +377,7 @@ if (-not (Test-Newer $downloaded $(if ($script:InstalledVersion) { $script:Insta
   Write-Host ''
   Write-Host "You already have the latest version ($($script:InstalledVersion))."
   Remove-Scratch
+  Show-HelperReady
   Pause-ForReader
   exit 0
 }
@@ -346,5 +414,6 @@ Write-Host 'Last step: click the Quiz Answers icon in Chrome. It usually switche
 Write-Host 'the new version by itself; if it shows "Restart to finish", click that.'
 Write-Host 'Keep "Developer mode" on at chrome://extensions - Quiz Answers only runs'
 Write-Host 'while it is on.'
+Show-HelperReady
 Pause-ForReader
 exit 0
