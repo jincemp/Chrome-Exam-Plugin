@@ -340,6 +340,9 @@ try {
   let popup = await openPopup();
   await popupShot(popup, 'b5-popup-restart.png', '#get-answers', 'Click', 'above');
   await popup.close();
+  // Done holding the restart back. (Open, it would also make the popup's own
+  // restart wait, so that nothing typed into it is lost.)
+  await settingsPage.close();
 
   // C: this version running, its helper set up by the person's one
   // double-click (the real updater, with nothing newer to install), and a
@@ -378,7 +381,6 @@ try {
   await popupShot(popup, 'c3-restarting.png');
   holdDownload = null;
   await popup.waitForEvent('close', { timeout: 20000 }).catch(() => {});
-  await settingsPage.close().catch(() => { /* closed by the restart */ });
 
   /* --------------------------------------------------- the updater's real output */
 

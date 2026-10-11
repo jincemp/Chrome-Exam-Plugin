@@ -1099,6 +1099,24 @@ try {
     assert.match(restartNote, /Version 99\.0\.1 is installed/);
   });
 
+  // The driver is a settings page, open in a tab. Restarting would close it,
+  // and anything typed there and not saved: the popup's restart waits for it.
+  await restartPopup.click('#get-answers');
+  await restartPopup.waitForFunction(() => /settings page/.test(document.getElementById('update-text')?.textContent || ''), null, { timeout: 5000 }).catch(() => {});
+  const runningNow = async () => {
+    for (const w of context.serviceWorkers().filter((x) => x.url().includes(extensionId)).reverse()) {
+      try { return await w.evaluate(() => chrome.runtime.getManifest().version); } catch { /* gone */ }
+    }
+    return null;
+  };
+  const heldForSettings = { said: await restartPopup.textContent('#update-text'), version: await runningNow() };
+
+  check('with the settings page open, the popup\'s restart waits, and says why', () => {
+    assert.match(heldForSettings.said, /Close the Quiz Answers settings page first/);
+    assert.notEqual(heldForSettings.version, '99.0.1', 'it restarted under the open settings page');
+  });
+
+  await driver.close();
   const nextWorker = context.waitForEvent('serviceworker', { timeout: 20000 });
   await restartPopup.click('#get-answers').catch(() => { /* the click closes the popup under itself */ });
   const reborn = await nextWorker.catch(() => null);

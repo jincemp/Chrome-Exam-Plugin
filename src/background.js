@@ -583,6 +583,17 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
           sendResponse({ ok: false, busy: true });
           return;
         }
+        // A settings page open in a tab would close with the restart, and with
+        // it anything typed there and not saved. Its own Restart button may go
+        // ahead; the popup's waits until it is closed.
+        const settings = chrome.runtime.getURL('options/options.html');
+        if (!String(sender?.url || '').startsWith(settings)) {
+          const tabs = await chrome.runtime.getContexts({ contextTypes: ['TAB'] }).catch(() => []);
+          if (tabs.some((c) => String(c.documentUrl || '').startsWith(settings))) {
+            sendResponse({ ok: false, settingsOpen: true });
+            return;
+          }
+        }
         // Still being copied in: restarting now would leave nothing running.
         if (!(await readyToRestart())) {
           sendResponse({ ok: false, copying: true });
@@ -676,8 +687,9 @@ function updateOnce() {
     }
     // The page that asked may be gone by now: on a Mac the update's Terminal
     // window takes the focus, and the popup closes with it. So the switch-over
-    // is finished from here - as soon as it would cost nothing.
-    if (reply.ok && /^Updated /.test(reply.summary || '')) restartIfUpdatedWhenIdleSoon();
+    // is finished from here - as soon as it would cost nothing, and only if
+    // there are new files to switch to.
+    if (reply.ok) restartIfUpdatedWhenIdleSoon();
     return reply;
   })();
   return updateInFlight;

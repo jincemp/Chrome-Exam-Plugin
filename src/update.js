@@ -170,14 +170,34 @@ export async function answersHeld() {
   return Object.entries(all).filter(([key, job]) => key.startsWith('job:') && job?.status === 'done').length;
 }
 
-/** Is the helper registered, and does it answer? false whenever in doubt. */
-export async function helperReady() {
+/**
+ * Can "Update now" work here? 'ready' when the helper answers. Otherwise why
+ * not, as far as Chrome's error says: 'other-copy' when it was set up for a
+ * different copy of Quiz Answers, 'off' when whoever manages the computer has
+ * switched helpers off, and 'missing' for everything else - not set up yet, in
+ * the main.
+ */
+export async function helperStatus() {
   try {
     const reply = await chrome.runtime.sendNativeMessage(HELPER, { type: 'ping' });
-    return reply?.ok === true;
-  } catch {
-    return false; // not registered yet, or blocked
+    return reply?.ok === true ? 'ready' : 'missing';
+  } catch (err) {
+    const m = String(err?.message || err || '');
+    if (/forbidden/i.test(m)) return 'other-copy';
+    if (/administrator/i.test(m)) return 'off';
+    return 'missing';
   }
+}
+
+/** What to say when "Update now" cannot work, for helperStatus()'s answer. */
+export function withoutHelper(status, latest) {
+  if (status === 'other-copy') {
+    return `Version ${latest} is out. "Update now" is set up for another copy of Quiz Answers: double-click "Update Quiz Answers" in this one's folder to bring it here.`;
+  }
+  if (status === 'off') {
+    return `Version ${latest} is out. Updating from here is switched off on this computer: double-click "Update Quiz Answers" in the extension's folder to get it.`;
+  }
+  return `Version ${latest} is out. To get it, double-click "Update Quiz Answers" in the extension's folder. After that, this becomes an "Update now" button.`;
 }
 
 /**

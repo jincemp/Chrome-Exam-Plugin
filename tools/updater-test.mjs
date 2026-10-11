@@ -19,7 +19,7 @@ import { spawn, spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import { tmpdir } from 'node:os';
 import {
-  cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, realpathSync, rmSync, statSync, writeFileSync, appendFileSync,
+  chmodSync, cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, realpathSync, rmSync, statSync, writeFileSync, appendFileSync,
 } from 'node:fs';
 
 const root = path.dirname(path.dirname(fileURLToPath(import.meta.url)));
@@ -132,7 +132,8 @@ let served = { status: 200, body: Buffer.alloc(0) };
 let downloads = 0;
 const server = http.createServer((req, res) => {
   downloads++;
-  res.writeHead(served.status, { 'content-type': 'application/zip' }).end(served.body);
+  // A slow download, for the cases that need two runs to overlap.
+  setTimeout(() => res.writeHead(served.status, { 'content-type': 'application/zip' }).end(served.body), served.delayMs || 0);
 });
 await new Promise((r) => server.listen(0, '127.0.0.1', r));
 const ZIP_URL = `http://127.0.0.1:${server.address().port}/main.zip`;
@@ -203,16 +204,16 @@ function helperRegistration(where) {
   const home = `${where} helper`; // beside, not inside: creating it must not create a Chrome folder
   return engine.label === 'mac'
     ? { env: { QUIZ_ANSWERS_CHROME_DIRS: where, QUIZ_ANSWERS_HELPER_HOME: home }, file: path.join(where, 'NativeMessagingHosts', 'com.jincemp.quiz_answers.json'), home }
-    : { env: { QUIZ_ANSWERS_NATIVE_DIR: where }, file: path.join(where, 'com.jincemp.quiz_answers.json') };
+    : { env: { QUIZ_ANSWERS_NATIVE_DIR: where }, file: path.join(where, 'com.jincemp.quiz_answers.json'), home: where };
 }
 
 /**
  * The helper Chrome would start for `ext`, set up as a person's double-click
- * sets it up: a run of the updater with nothing newer to install. On a Mac
- * that copies it out of the folder; on Windows it stays in updater\.
+ * sets it up: a run of the updater with nothing newer to install, which copies
+ * it out of the folder. (On Windows Chrome starts native-host.bat, one line
+ * that runs this .ps1 and cannot run here.)
  */
 async function helperFor(ext) {
-  if (engine.label === 'windows') return path.join(ext, 'updater', engine.helper);
   const reg = helperRegistration(mkdtempSync(path.join(scratch, 'chrome-')));
   const before = served;
   served = { status: 200, body: latestZip(versionIn(ext)) };
@@ -491,6 +492,8 @@ await test('a run registers the "Update now" helper, for this copy only', async 
   const ext = installed('9.9.9');
   const chrome = mkdtempSync(path.join(scratch, 'chrome-'));
   const reg = helperRegistration(chrome);
+  // As in a copy that lost its permissions on the way: the installed copy must not.
+  if (engine.label === 'mac') chmodSync(path.join(ext, 'updater', 'native-host.sh'), 0o644);
   served = { status: 200, body: latestZip('9.9.9') };
   const { status, out } = await runUpdater(ext, reg.env);
   assert.equal(status, 0, out);
@@ -506,8 +509,12 @@ await test('a run registers the "Update now" helper, for this copy only', async 
     assert.ok(statSync(launcher).mode & 0o100, 'Terminal only runs an executable .command');
     assert.match(readFileSync(launcher, 'utf8'), /^exec \/bin\/bash .*\/updater\/update\.sh$/m);
   } else {
-    assert.match(m.path.replace(/\\/g, '/'), /\/updater\/native-host\.bat$/);
-    assert.ok(m.path.replace(/\\/g, '/').startsWith(realpathSync(ext)), `the helper must be the one in this folder: ${m.path}`);
+    // Outside the folder, which Windows could not rename while Chrome runs a helper in it.
+    assert.equal(m.path, path.join(reg.home, 'native-host.bat'));
+    for (const f of ['native-host.bat', 'native-host.ps1']) {
+      assert.ok(readFileSync(path.join(reg.home, f)).equals(readFileSync(path.join(ext, 'updater', f))), `${f} is not a true copy`);
+    }
+    assert.equal(readFileSync(path.join(reg.home, 'folder.txt'), 'utf8'), ext, 'the helper must update this folder');
   }
   assert.ok(m.allowed_origins.includes(`chrome-extension://${extensionIdOf(ext)}/`), `Chrome's ID for this copy is missing: ${m.allowed_origins}`);
   // Spare spellings of this copy's own path at most: never another extension.
@@ -558,18 +565,84 @@ await test('a failed update through the helper comes back as a failure, with the
   assert.deepEqual(snapshot(ext), before);
 });
 
+await test('a helper run that first repairs an interrupted update reports how the update went', async () => {
+  // The run says "The last update did not finish..." first, then "Updated...".
+  const ext = installed('1.7.0');
+  const helper = await helperFor(ext);
+  mkdirSync(path.join(ext, '.update-old'));
+  cpSync(path.join(ext, 'icons'), path.join(ext, '.update-old', 'icons'), { recursive: true });
+  served = { status: 200, body: latestZip('9.9.9') };
+  const { reply, err } = await runHelper(helper, { type: 'update' });
+  assert.equal(reply?.ok, true, `${JSON.stringify(reply)}\n${err}`);
+  assert.equal(reply.summary, 'Updated Quiz Answers from 1.7.0 to 9.9.9.');
+  noLeftovers(ext);
+});
+
+await test('two updates of one folder at once: the second is turned away, the first finishes cleanly', async () => {
+  const ext = installed('1.7.0');
+  served = { status: 200, body: latestZip('9.9.9'), delayMs: 2500 };
+  const first = runUpdater(ext);
+  await new Promise((r) => setTimeout(r, 1000)); // the first is waiting for its download
+  const second = await runUpdater(ext);
+  const done = await first;
+  served = { status: 200, body: latestZip('9.9.9') };
+  assert.equal(second.status, 1, second.out);
+  assert.match(second.out, /^Update failed: another update of Quiz Answers is running right now/m);
+  assert.equal(done.status, 0, done.out);
+  assert.match(done.out, /Updated Quiz Answers from 1\.7\.0 to 9\.9\.9\./);
+  assert.equal(versionIn(ext), '9.9.9');
+  noLeftovers(ext);
+});
+
+if (engine.label === 'mac') {
+  await test('a lock left by a run that is gone does not block the next one', async () => {
+    const ext = installed('1.7.0');
+    mkdirSync(path.join(ext, '.update-lock'));
+    const gone = spawnSync('sh', ['-c', 'echo $$']).stdout.toString().trim(); // a process that has exited
+    writeFileSync(path.join(ext, '.update-lock', 'pid'), `${gone}\n`);
+    served = { status: 200, body: latestZip('9.9.9') };
+    const { status, out } = await runUpdater(ext);
+    assert.equal(status, 0, out);
+    assert.equal(versionIn(ext), '9.9.9');
+    assert.equal(existsSync(path.join(ext, '.update-lock')), false, 'the lock outlived its run');
+  });
+}
+
 if (engine.label === 'windows') {
+  await test('two spellings of the folder path give two IDs, each a proper entry of its own', async () => {
+    // Get-OnDiskPath only differs on Windows (letter case, 8.3 names), so a
+    // stand-in gives the second spelling. Install-Helper itself is the real one.
+    const ext = installed('1.7.0');
+    const where = mkdtempSync(path.join(scratch, 'two-ids-'));
+    const q = (p) => `'${p.replace(/'/g, "''")}'`;
+    const script = [
+      `$ast = [System.Management.Automation.Language.Parser]::ParseFile(${q(path.join(ext, 'updater', 'update.ps1'))}, [ref]$null, [ref]$null)`,
+      `foreach ($f in $ast.FindAll({ param($n) $n -is [System.Management.Automation.Language.FunctionDefinitionAst] }, $true)) { . ([scriptblock]::Create($f.Extent.Text)) }`,
+      `function Get-OnDiskPath([string]$p) { return $p + '-as-on-disk' }`,
+      `$HelperName = 'com.jincemp.quiz_answers'; $script:OnWindows = $false; $script:Dir = ${q(ext)}`,
+      `$env:QUIZ_ANSWERS_NATIVE_DIR = ${q(where)}`,
+      `if (-not (Install-Helper)) { exit 3 }`,
+    ].join('\n');
+    const run = spawnSync(pwsh, ['-NoProfile', '-NonInteractive', '-Command', script], { encoding: 'utf8' });
+    assert.equal(run.status, 0, run.stdout + run.stderr);
+    const m = JSON.parse(readFileSync(path.join(where, 'com.jincemp.quiz_answers.json'), 'utf8'));
+    assert.equal(m.allowed_origins.length, 2, String(m.allowed_origins));
+    for (const o of m.allowed_origins) assert.match(o, /^chrome-extension:\/\/[a-p]{32}\/$/);
+    assert.ok(m.allowed_origins.includes(`chrome-extension://${extensionIdOf(ext)}/`));
+  });
+
   await test('the helper runs the update from outside the folder it replaces', async () => {
     // Chrome starts the helper inside updater\, and Windows will not rename a
     // folder that a program is working in - so an update run from there
     // would fail on every PC. A stand-in updater reports where it ran.
     const ext = installed('1.7.0');
+    const helper = await helperFor(ext);
     const report = path.join(scratch, `ran-in-${passed}.txt`);
     writeFileSync(path.join(ext, 'updater', 'update.ps1'), [
       `Set-Content -LiteralPath $env:RAN_IN -Value ([Environment]::CurrentDirectory)`,
       `Write-Host 'Updated Quiz Answers from 1.7.0 to 9.9.9.'`,
     ].join('\n'));
-    const { reply, err } = await runHelper(await helperFor(ext), { type: 'update' }, { RAN_IN: report });
+    const { reply, err } = await runHelper(helper, { type: 'update' }, { RAN_IN: report });
     assert.equal(reply?.ok, true, `${JSON.stringify(reply)}\n${err}`);
     const ranIn = readFileSync(report, 'utf8').trim();
     assert.ok(!path.resolve(ranIn).startsWith(realpathSync(ext)), `the update ran inside the extension folder: ${ranIn}`);

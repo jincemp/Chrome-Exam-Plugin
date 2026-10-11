@@ -55,6 +55,7 @@ $script:Count = 0
 $script:EntryInProgress = $null
 $script:InstalledVersion = $null
 $script:Recovered = $false
+$script:Lock = $null
 
 function Pause-ForReader {
   # Only when a person is at the window - never when run by a test.
@@ -142,6 +143,12 @@ function Remove-Scratch {
       Remove-Item -LiteralPath $script:Backup -Force -ErrorAction Stop
     }
   } catch { }
+  # Every way this script ends after taking the lock comes through here. The
+  # lock file goes with it.
+  if ($script:Lock) {
+    try { $script:Lock.Dispose() } catch { }
+    $script:Lock = $null
+  }
 }
 
 function Stop-WithFailure([string]$why) {
@@ -274,30 +281,46 @@ function Get-ExtensionIds([string]$path) {
     $id = Get-ExtensionId $p
     if (-not $ids.Contains($id)) { [void]$ids.Add($id) }
   }
-  return ,$ids.ToArray()
+  return $ids.ToArray()
 }
 
-# Registers updater\native-host.bat with Chrome, for this copy of Quiz Answers
-# alone, so its "Update now" button can run this same update. Repeated after
-# every successful run, which keeps it pointing at the helper in this folder.
-# Never throws: no registration only means no button, and the double-click
-# still works. Returns $true when registered.
+# Writes $bytes to $path, unless it already holds exactly them: a helper that
+# is running from that file is left undisturbed. A file written here is new,
+# so it carries no "came from the internet" mark.
+function Write-IfChanged([string]$path, [byte[]]$bytes) {
+  if (Test-Path -LiteralPath $path) {
+    if ([Convert]::ToBase64String([IO.File]::ReadAllBytes($path)) -eq [Convert]::ToBase64String($bytes)) { return }
+  }
+  [IO.File]::WriteAllBytes($path, $bytes)
+}
+
+# Sets up the "Update now" button: copies of updater\native-host.bat and .ps1
+# in %LOCALAPPDATA%\Quiz Answers, a note beside them of which folder to update,
+# and the small file that tells Chrome about the helper, for this copy of Quiz
+# Answers alone, named in the registry, where Windows Chrome looks. The helper
+# lives outside this folder because Chrome starts it in its own folder, and
+# Windows will not rename a folder that a program - cmd.exe, or the console it
+# opens - is working in, while the update has to rename updater\. Repeated
+# after every run, so all of it stays up to date. Never throws: no
+# registration only means no button, and the double-click still works.
+# Returns $true when registered.
 function Install-Helper {
   try {
-    $helper = Join-Path $script:Dir 'updater\native-host.bat'
-    if (-not (Test-Path -LiteralPath $helper)) { return $false }
-    try { Unblock-File -LiteralPath $helper -ErrorAction SilentlyContinue } catch { }
-    try { Unblock-File -LiteralPath (Join-Path $script:Dir 'updater\native-host.ps1') -ErrorAction SilentlyContinue } catch { }
-    $origins = @(Get-ExtensionIds $script:Dir | ForEach-Object { "chrome-extension://$_/" })
-    # QUIZ_ANSWERS_NATIVE_DIR is a test hook; Windows has no folder Chrome
-    # searches, only the registry entry that names this file.
+    $bat = Join-Path (Join-Path $script:Dir 'updater') 'native-host.bat'
+    $ps1 = Join-Path (Join-Path $script:Dir 'updater') 'native-host.ps1'
+    if (-not ((Test-Path -LiteralPath $bat) -and (Test-Path -LiteralPath $ps1))) { return $false }
+    $origins = @(foreach ($id in (Get-ExtensionIds $script:Dir)) { "chrome-extension://$id/" })
+    # QUIZ_ANSWERS_NATIVE_DIR is a test hook.
     $where = if ($env:QUIZ_ANSWERS_NATIVE_DIR) { $env:QUIZ_ANSWERS_NATIVE_DIR } else { Join-Path $env:LOCALAPPDATA 'Quiz Answers' }
     [void](New-Item -ItemType Directory -Force -Path $where)
+    Write-IfChanged (Join-Path $where 'native-host.ps1') ([IO.File]::ReadAllBytes($ps1))
+    Write-IfChanged (Join-Path $where 'native-host.bat') ([IO.File]::ReadAllBytes($bat))
+    Write-IfChanged (Join-Path $where 'folder.txt') ((New-Object Text.UTF8Encoding $false).GetBytes($script:Dir))
     $file = Join-Path $where "$HelperName.json"
     $manifest = [ordered]@{
       name = $HelperName
       description = 'Quiz Answers: updates itself when its Update now button is pressed'
-      path = $helper
+      path = (Join-Path $where 'native-host.bat')
       type = 'stdio'
       allowed_origins = $origins
     }
@@ -353,15 +376,35 @@ foreach ($f in @((Join-Path $script:Dir 'Update Quiz Answers.bat'), $PSCommandPa
   try { Unblock-File -LiteralPath $f -ErrorAction SilentlyContinue } catch { }
 }
 
+# One update of this folder at a time. Two at once would each take the other's
+# half-done swap for an interrupted run, and undo it - a double-click while the
+# Update now button's run is going, say. Windows lets go of the file when this
+# process ends, however it ends. Before anything that deletes: a run turned
+# away here must not touch the scratch folders of the run that is going.
+try {
+  # Deleted when it is let go of - by the end of this script, or by Windows if
+  # this process is stopped.
+  $script:Lock = New-Object IO.FileStream((Join-Path $script:Dir '.update-lock'), [IO.FileMode]::OpenOrCreate, [IO.FileAccess]::ReadWrite, [IO.FileShare]::None, 1, [IO.FileOptions]::DeleteOnClose)
+  try { [IO.File]::SetAttributes((Join-Path $script:Dir '.update-lock'), [IO.FileAttributes]::Hidden) } catch { }
+} catch [IO.IOException] {
+  Write-Host ''
+  Write-Host 'Update failed: another update of Quiz Answers is running right now. Let it finish, then try again if you need to.'
+  Pause-ForReader
+  exit 1
+} catch {
+  # Not a lock held elsewhere - most likely a folder this cannot write to,
+  # which the update itself explains in a moment.
+}
+
 $script:Staging = Join-Path $script:Dir '.update-new'
 $script:Backup = Join-Path $script:Dir '.update-old'
 $script:Trash = Join-Path $script:Dir '.update-trash'
 
 if (-not (Restore-InterruptedRun)) {
   Write-Host ''
-  Write-Host 'Update failed: the last update did not finish, and the files it moved'
-  Write-Host 'aside could not be put back. They are safe in the hidden ".update-old"'
-  Write-Host 'folder inside Quiz Answers. Nothing else was changed.'
+  Write-Host 'Update failed: the last update did not finish, and its files could not be put back.'
+  Write-Host 'They are safe in the hidden ".update-old" folder inside Quiz Answers.'
+  Write-Host 'Nothing else was changed.'
   Remove-Scratch
   Pause-ForReader
   exit 1
@@ -378,7 +421,8 @@ try {
   $script:Work = Join-Path ([IO.Path]::GetTempPath()) ('quiz-answers-update-' + [Guid]::NewGuid().ToString('N'))
   [void](New-Item -ItemType Directory -Path $script:Work)
   $zip = Join-Path $script:Work 'latest.zip'
-  Invoke-WebRequest -Uri $ZipUrl -OutFile $zip -UseBasicParsing
+  # A download that stalls is given up on, not waited for forever.
+  Invoke-WebRequest -Uri $ZipUrl -OutFile $zip -UseBasicParsing -TimeoutSec 120
 } catch {
   Stop-WithFailure 'could not download the latest version. Check your internet connection and try again.'
 }

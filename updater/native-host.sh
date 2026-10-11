@@ -93,7 +93,9 @@ run_update() {
     sleep 1
     waited=$((waited + 1))
   done
-  summary="$(grep -E '^(Updated Quiz Answers|You already have|Update failed:|The last update did not finish|This does not look|This copy of Quiz Answers)' "$report" | head -n 1)"
+  # The last of these lines is how it ended: a run that first repairs an
+  # interrupted one says so before it says how the update went.
+  summary="$(grep -E '^(Updated Quiz Answers|You already have|Update failed:|The last update did not finish|This does not look|This copy of Quiz Answers)' "$report" | tail -n 1)"
   case "$summary" in 'Updated '* | 'You already have'*) ok=true ;; *) ok=false ;; esac
   reply "$ok" "$summary" "$(grep -v '^-- done --$' "$report" | tail -c 3000)"
 }

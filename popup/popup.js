@@ -1,6 +1,6 @@
 import { formatAll, sortAnswers } from '../src/format.js';
 import { getSettings, jobKey, pageKey } from '../src/storage.js';
-import { answersHeld, checkForUpdate, helperReady, pendingRestart, requestRestart, updateNow } from '../src/update.js';
+import { answersHeld, checkForUpdate, helperStatus, pendingRestart, requestRestart, updateNow, withoutHelper } from '../src/update.js';
 
 const $ = (id) => document.getElementById(id);
 
@@ -200,14 +200,18 @@ async function send(message) {
 async function restart() {
   const res = await requestRestart();
   // On success this page closes with the restart, so only a refusal is left to show.
-  const why = res?.busy ? 'Answers are still being worked on. Restart once they are done.'
+  if (res?.ok) return;
+  const action = $('update-action');
+  $('update-text').textContent = res?.busy ? 'Answers are still being worked on. Restart once they are done.'
     : res?.copying ? 'The new files are still being copied into the folder. Try again in a moment.'
-      : '';
-  if (why) {
-    $('update-text').textContent = why;
-    $('update-action').hidden = !res.copying; // "try again" is the same button
-    $('update').hidden = false;
-  }
+      : res?.settingsOpen ? 'Close the Quiz Answers settings page first: restarting would close it, and anything not saved there.'
+        : 'Could not restart just now. Try again in a moment.';
+  // "Try again" is this same button, now and then.
+  action.textContent = 'Restart to finish';
+  action.onclick = restart;
+  action.disabled = false;
+  action.hidden = Boolean(res?.busy);
+  $('update').hidden = false;
 }
 
 async function start(force) {
@@ -322,13 +326,14 @@ async function renderUpdate() {
 
   const { available, latest } = await checkForUpdate();
   if (!available) return;
-  if (await helperReady()) {
+  const helper = await helperStatus();
+  if (helper === 'ready') {
     text.textContent = `Version ${latest} is out.`;
     action.textContent = 'Update now';
     action.onclick = () => runUpdate(latest);
   } else {
     // The double-click also sets up the helper, so this is the last time.
-    text.textContent = `Version ${latest} is out. To get it, double-click "Update Quiz Answers" in the extension's folder. After that, this becomes an "Update now" button.`;
+    text.textContent = withoutHelper(helper, latest);
     offerFolder();
   }
   $('update').hidden = false;
@@ -353,12 +358,17 @@ async function runUpdate(latest) {
 
   const res = await updateNow();
 
-  if (res?.ok && /^Updated /.test(res.summary || '')) {
+  // New files on disk is what counts, not how the updater worded it: a run
+  // that first repaired an interrupted one says that too.
+  const installed = res?.ok ? await pendingRestart() : null;
+  if (installed) {
     let held = 1;
     try { held = await answersHeld(); } catch { /* assume there is something to lose */ }
     if (!held) {
       // Nothing to lose by restarting, and the person asked for the update.
-      text.textContent = `${res.summary} Restarting… click the icon again in a moment.`;
+      text.textContent = `${res.summary || `Version ${installed} is installed.`} Restarting… click the icon again in a moment.`;
+      action.textContent = 'Restart to finish';
+      action.onclick = restart;
       await new Promise((r) => setTimeout(r, 1200));
       return restart();
     }

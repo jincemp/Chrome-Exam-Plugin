@@ -1,5 +1,7 @@
 # The helper behind Quiz Answers' "Update now" button, on Windows. Chrome
 # starts it through native-host.bat; read native-host.sh for what it is for.
+# update.ps1 copies both to %LOCALAPPDATA%\Quiz Answers, with a folder.txt
+# naming the Quiz Answers folder to update, and registers the copy.
 #
 # The protocol: Chrome writes a 4-byte little-endian length, then that many
 # bytes of UTF-8 JSON; the reply goes back the same way. Nothing else may ever
@@ -12,6 +14,9 @@ $ErrorActionPreference = 'Stop'
 $ProgressPreference = 'SilentlyContinue'
 $HelperVersion = 1
 $MaxMessage = 4096
+# How long an update may take before this stops waiting for it: a download
+# that never ends. Chrome waits as long as this does.
+$WaitFor = 600
 
 function Read-Exactly($stream, [int]$count) {
   $buf = New-Object byte[] $count
@@ -43,6 +48,14 @@ function Write-Message([string]$json) {
   $out.Flush()
 }
 
+# The Quiz Answers folder to update: named in folder.txt beside the copy that
+# update.ps1 sets up, or else the folder above this file, in updater\.
+function Get-QuizFolder {
+  $note = Join-Path $PSScriptRoot 'folder.txt'
+  if (Test-Path -LiteralPath $note) { return [IO.File]::ReadAllText($note, [Text.Encoding]::UTF8) }
+  return (Split-Path -Parent $PSScriptRoot)
+}
+
 # Runs update.ps1 as its own process, with its own input and output, so nothing
 # it prints can reach Chrome's pipe. Returns @(exit code, everything it printed).
 # It works from the temporary folder: Windows will not rename a folder some
@@ -50,7 +63,7 @@ function Write-Message([string]$json) {
 function Invoke-Updater {
   $psi = New-Object System.Diagnostics.ProcessStartInfo
   $psi.FileName = [System.Diagnostics.Process]::GetCurrentProcess().MainModule.FileName
-  $psi.Arguments = '-NoProfile -NonInteractive -ExecutionPolicy Bypass -File "' + (Join-Path $PSScriptRoot 'update.ps1') + '"'
+  $psi.Arguments = '-NoProfile -NonInteractive -ExecutionPolicy Bypass -File "' + (Join-Path (Join-Path (Get-QuizFolder) 'updater') 'update.ps1') + '"'
   $psi.WorkingDirectory = [IO.Path]::GetTempPath()
   $psi.UseShellExecute = $false
   $psi.CreateNoWindow = $true
@@ -60,9 +73,14 @@ function Invoke-Updater {
   $p = [System.Diagnostics.Process]::Start($psi)
   $p.StandardInput.Close()
   $stdout = $p.StandardOutput.ReadToEndAsync()
-  $stderr = $p.StandardError.ReadToEnd()
-  $p.WaitForExit()
-  return @($p.ExitCode, ($stdout.Result + $stderr))
+  $stderr = $p.StandardError.ReadToEndAsync()
+  if (-not $p.WaitForExit($WaitFor * 1000)) {
+    # Left to finish on its own: stopping it partway would be worse. The lock
+    # it holds turns away another update until it has.
+    return @(-2, 'Update failed: it did not finish in time.')
+  }
+  $p.WaitForExit() # and its output with it
+  return @($p.ExitCode, ($stdout.Result + $stderr.Result))
 }
 
 try {
@@ -72,7 +90,9 @@ try {
     $result = Invoke-Updater
     $code = [int]$result[0]
     $out = [string]$result[1]
-    $summary = ($out -split "`r?`n" | Where-Object { $_ -match '^(Updated Quiz Answers|You already have|Update failed:|The last update did not finish|This does not look|This copy of Quiz Answers)' } | Select-Object -First 1)
+    # The last of these lines is how it ended: a run that first repairs an
+    # interrupted one says so before it says how the update went.
+    $summary = ($out -split "`r?`n" | Where-Object { $_ -match '^(Updated Quiz Answers|You already have|Update failed:|The last update did not finish|This does not look|This copy of Quiz Answers)' } | Select-Object -Last 1)
     if ($out.Length -gt 3000) { $out = $out.Substring($out.Length - 3000) }
     $reply = @{ ok = ($code -eq 0); code = $code; summary = [string]$summary; output = $out }
   } else {

@@ -55,6 +55,7 @@ SWAPPED=()
 COUNT=0
 DISCARDED=0
 RECOVERED=0
+LOCK=''
 
 REPORT="${QUIZ_ANSWERS_REPORT:-}"
 
@@ -250,6 +251,7 @@ discard() {
 # Only ever touches the scratch folders, and only once DIR has been confirmed
 # to be the Quiz Answers folder.
 cleanup() {
+  if [ -n "$LOCK" ] && [ "$(cat "$LOCK/pid" 2>/dev/null)" = "$$" ]; then rm -rf "$LOCK"; fi
   [ -n "$WORK" ] && rm -rf "$WORK"
   [ -n "$STAGING" ] && rm -rf "$STAGING"
   # Only an empty backup goes. Anything still in it is the only copy of an old
@@ -333,6 +335,27 @@ recover_interrupted_run() {
   RECOVERED=1
 }
 
+# One update of this folder at a time. Two at once would each take the other's
+# half-done swap for an interrupted run, and undo it - a double-click while the
+# Update now button's run is going, say. The lock is a folder, because making
+# one either works or finds it there, in one step. A lock whose run has gone -
+# a Mac switched off mid-update - is taken over.
+take_lock() {
+  local lock="$DIR/.update-lock" pid
+  if ! mkdir "$lock" 2>/dev/null; then
+    pid="$(cat "$lock/pid" 2>/dev/null)"
+    if [ -n "$(find "$lock" -maxdepth 0 -mmin +60 2>/dev/null)" ]; then
+      : # an hour old: whatever made it is long gone
+    elif [ -n "$pid" ] && kill -0 "$pid" 2>/dev/null; then
+      return 1
+    elif [ -z "$pid" ] && [ -z "$(find "$lock" -maxdepth 0 -mmin +1 2>/dev/null)" ]; then
+      return 1 # just made, by a run about to write its number into it
+    fi
+  fi
+  printf '%s\n' "$$" >"$lock/pid" 2>/dev/null || return 1
+  LOCK="$lock"
+}
+
 main() {
   local latest entry name
 
@@ -357,6 +380,15 @@ main() {
   # once, so put it back now, whether or not there is anything to install.
   chmod +x "$DIR/Update Quiz Answers.command" 2>/dev/null || true
 
+  # Before anything that deletes: a run turned away here must not touch the
+  # scratch folders of the run that is going.
+  if ! take_lock; then
+    say ''
+    say 'Update failed: another update of Quiz Answers is running right now. Let it finish, then try again if you need to.'
+    pause
+    exit 1
+  fi
+
   # Only now, with DIR confirmed, is it safe to arm a trap that deletes things.
   STAGING="$DIR/.update-new"
   BACKUP="$DIR/.update-old"
@@ -365,9 +397,9 @@ main() {
 
   if ! recover_interrupted_run; then
     say ''
-    say 'Update failed: the last update did not finish, and the files it moved'
-    say 'aside could not be put back. They are safe in the hidden ".update-old"'
-    say 'folder inside Quiz Answers. Nothing else was changed.'
+    say 'Update failed: the last update did not finish, and its files could not be put back.'
+    say 'They are safe in the hidden ".update-old" folder inside Quiz Answers.'
+    say 'Nothing else was changed.'
     pause
     exit 1
   fi
@@ -378,7 +410,8 @@ main() {
 
   WORK="$(mktemp -d "${TMPDIR:-/tmp}/quiz-answers-update.XXXXXX")" || fail 'could not create a temporary folder.'
   # GitHub answers with a redirect; never follow one off HTTPS.
-  curl -fsSL --proto-redir '=https' --retry 2 --connect-timeout 20 -o "$WORK/latest.zip" "$ZIP_URL" ||
+  # A download that stalls for a minute is given up on, not waited for forever.
+  curl -fsSL --proto-redir '=https' --retry 2 --connect-timeout 20 --speed-limit 1024 --speed-time 60 -o "$WORK/latest.zip" "$ZIP_URL" ||
     fail 'could not download the latest version. Check your internet connection and try again.'
 
   # Unpack beside the extension rather than in the temporary folder, so every

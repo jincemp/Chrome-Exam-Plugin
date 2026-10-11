@@ -1,6 +1,6 @@
 import { DEFAULT_SETTINGS, getSettings, isInsecureBase, setSettings } from '../src/storage.js';
 import { listModels } from '../src/openai.js';
-import { answersHeld, checkForUpdate, helperReady, pendingRestart, requestRestart, updateNow } from '../src/update.js';
+import { answersHeld, checkForUpdate, helperStatus, pendingRestart, requestRestart, updateNow, withoutHelper } from '../src/update.js';
 
 const $ = (id) => document.getElementById(id);
 
@@ -112,8 +112,9 @@ async function showUpdate() {
   if (!available) return;
   const text = $('update-status-text');
   const button = $('update-restart');
-  if (!(await helperReady())) {
-    text.textContent = `Version ${latest} is out. To get it, double-click "Update Quiz Answers" in this extension's folder. After that, this becomes an "Update now" button.`;
+  const helper = await helperStatus();
+  if (helper !== 'ready') {
+    text.textContent = withoutHelper(helper, latest);
     $('update-status').hidden = false;
     return;
   }
@@ -125,7 +126,7 @@ async function showUpdate() {
     text.textContent = `Updating to ${latest}… this takes a few seconds.`;
     const res = await updateNow();
     button.disabled = false;
-    if (res?.ok && /^Updated /.test(res.summary || '')) return showUpdate(); // now "installed", with its restart button
+    if (res?.ok && (await pendingRestart())) return showUpdate(); // now "installed", with its restart button
     button.hidden = Boolean(res?.ok);
     text.textContent = res?.ok
       ? (res.summary || 'You already have the latest version.')
