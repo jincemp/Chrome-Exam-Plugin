@@ -9,6 +9,18 @@
 # getting it into exactly the old one's place; get that wrong and Chrome sees a
 # different extension with an empty settings page. Here the folder never moves.
 #
+# Three scratch folders live inside it while this runs, and none outlives a run
+# that finished:
+#   .update-new    the download, unpacked
+#   .update-old    each old entry, moved aside as its replacement goes in. Found
+#                  at the start of a run, it means the last one did not finish,
+#                  and it holds the only copy of what that run took out - unless
+#                  it holds a .finished mark, left by a run that finished but
+#                  could not clear it away.
+#   .update-trash  whatever is being thrown away. Nothing is deleted in place:
+#                  it is moved in here first, which cannot half-happen, and this
+#                  folder is emptied at the end.
+#
 # Written for the bash 3.2 that ships with macOS: no associative arrays, no
 # mapfile, no `local arr=(...)`, and no `set -u`, which 3.2 trips over when an
 # empty array expands.
@@ -16,6 +28,9 @@
 # The script replaces its own file partway through, and bash reads a script as
 # it goes. So everything is in functions and the work starts on the last line:
 # bash has read all of it before any of it runs.
+#
+# Test hooks, used only by tools/updater-test.mjs and inert unless set:
+# QUIZ_ANSWERS_ZIP_URL, _FAIL_AFTER, _FAIL_UNDO, _QUIT_AFTER and _TRACE.
 
 ZIP_URL="${QUIZ_ANSWERS_ZIP_URL:-https://github.com/jincemp/Chrome-Exam-Plugin/archive/refs/heads/main.zip}"
 APP_NAME='Quiz Answers'
@@ -26,10 +41,13 @@ DIR=''
 WORK=''
 STAGING=''
 BACKUP=''
+TRASH=''
 SRC=''
+CURRENT=''
 SWAPPED=()
 COUNT=0
-FINISHED=0
+DISCARDED=0
+RECOVERED=0
 
 say() { printf '%s\n' "$*"; }
 
@@ -64,25 +82,38 @@ newer() {
   return 1
 }
 
-# Runs on every exit. Only ever removes the scratch folders this script made,
-# and only once DIR has been confirmed to be the Quiz Answers folder.
+# True when $1 is a folder with anything in it.
+has_entries() {
+  [ -d "$1" ] && [ -n "$(ls -A "$1" 2>/dev/null)" ]
+}
+
+# Moves $1 into the trash, under a name nothing else will use.
+discard() {
+  mkdir -p "$TRASH" && mv "$1" "$TRASH/$(basename "$1").$$.$((DISCARDED += 1))"
+}
+
+# Runs on every exit, however it comes - closing the Terminal window included.
+# Only ever touches the scratch folders, and only once DIR has been confirmed
+# to be the Quiz Answers folder.
 cleanup() {
   [ -n "$WORK" ] && rm -rf "$WORK"
   [ -n "$STAGING" ] && rm -rf "$STAGING"
-  # BACKUP holds the only copy of every old entry swapped out so far. It goes
-  # only once the update has finished or been fully undone. Closing the window
-  # mid-swap also ends up here, and then the next run restores from it.
-  if [ -n "$BACKUP" ] && { [ "$FINISHED" = 1 ] || [ "${#SWAPPED[@]}" -eq 0 ]; }; then rm -rf "$BACKUP"; fi
+  # Only an empty backup goes. Anything still in it is the only copy of an old
+  # entry, and the next run puts it back.
+  [ -n "$BACKUP" ] && rmdir "$BACKUP" 2>/dev/null
+  [ -n "$TRASH" ] && rm -rf "$TRASH"
   return 0
 }
 
 fail() {
   say ''
   say "Update failed: $*"
-  if [ "${#SWAPPED[@]}" -gt 0 ]; then
+  if has_entries "$BACKUP"; then
     say 'Some of the old files could not be put back yet. They are safe in the'
     say 'hidden ".update-old" folder inside Quiz Answers. Double-click'
-    say '"Update Quiz Answers" again to finish.'
+    say '"Update Quiz Answers" again: it puts them back first.'
+  elif [ "$RECOVERED" = 1 ]; then
+    say "Quiz Answers is on version $CURRENT again, as before the update that did not finish."
   else
     say 'Nothing was changed - Quiz Answers is exactly as it was.'
   fi
@@ -92,7 +123,7 @@ fail() {
 
 # Undoes every swap made so far, newest first, so a failure partway through
 # never leaves Chrome loading half of one version and half of another. An
-# entry that cannot be put back stays in SWAPPED, which keeps BACKUP.
+# entry that cannot be put back stays in BACKUP, and the next run restores it.
 rollback() {
   local i n kept
   kept=()
@@ -100,7 +131,8 @@ rollback() {
   while [ "$i" -gt 0 ]; do
     i=$((i - 1))
     n="${SWAPPED[i]}"
-    if rm -rf "$DIR/$n" && { [ ! -e "$BACKUP/$n" ] || mv "$BACKUP/$n" "$DIR/$n"; }; then
+    if [ -n "$QUIZ_ANSWERS_FAIL_UNDO" ]; then kept+=("$n"); continue; fi # test hook only
+    if { [ ! -e "$DIR/$n" ] || discard "$DIR/$n"; } && { [ ! -e "$BACKUP/$n" ] || mv "$BACKUP/$n" "$DIR/$n"; }; then
       continue
     fi
     kept+=("$n")
@@ -125,38 +157,32 @@ swap_in() {
   COUNT=$((COUNT + 1))
 }
 
-# A run cut off mid-swap - the Mac lost power, the window was force-quit - can
-# leave some old files only in BACKUP. Put back anything missing before going
-# further, or clearing BACKUP below would delete the only copy.
+# A backup found at the start belongs to a run that did not finish: the Mac
+# lost power, the window was closed mid-swap, or its rollback could not finish.
+# Whatever that run left in the folder is some mix of two versions, and the
+# backup holds the old half. Put all of it back, so the folder is one whole
+# version again before anything else happens.
 recover_interrupted_run() {
   local entry n
-  [ -d "$DIR/.update-old" ] || return 0
+  has_entries "$BACKUP" || { rmdir "$BACKUP" 2>/dev/null; return 0; }
+  # Clutter from a run that did finish. Putting it back would undo that update.
+  if [ -e "$BACKUP/.finished" ]; then discard "$BACKUP" || rm -rf "$BACKUP"; return 0; fi
+  say 'The last update did not finish. Putting the previous version back first...'
   shopt -s dotglob nullglob
-  for entry in "$DIR/.update-old"/*; do
+  for entry in "$BACKUP"/*; do
     n="$(basename "$entry")"
-    if [ ! -e "$DIR/$n" ]; then mv "$entry" "$DIR/$n"; fi
+    if [ -e "$DIR/$n" ] && ! discard "$DIR/$n"; then shopt -u dotglob nullglob; return 1; fi
+    mv "$entry" "$DIR/$n" || { shopt -u dotglob nullglob; return 1; }
   done
   shopt -u dotglob nullglob
+  rmdir "$BACKUP" 2>/dev/null
+  RECOVERED=1
 }
 
 main() {
-  local current latest entry name
+  local latest entry name
 
   DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd -P)" || { say 'Could not find the Quiz Answers folder.'; pause; exit 1; }
-
-  # On a Mac, Terminal needs permission to touch Documents, Desktop or
-  # Downloads, and asks once. If that was refused, nothing in the folder can be
-  # read - which must not be reported as "this is not Quiz Answers".
-  if ! ls "$DIR" >/dev/null 2>&1; then
-    say 'macOS did not let Terminal open the Quiz Answers folder:'
-    say "  $DIR"
-    say ''
-    say 'To allow it: Apple menu > System Settings > Privacy & Security >'
-    say 'Files & Folders > Terminal, and turn on the folder Quiz Answers is in'
-    say '(Documents, Desktop or Downloads). Then double-click this again.'
-    pause
-    exit 1
-  fi
 
   if ! is_quiz_answers "$DIR"; then
     say 'This does not look like the Quiz Answers folder:'
@@ -171,24 +197,39 @@ main() {
     exit 1
   fi
 
-  recover_interrupted_run
+  # The launcher has to be executable for a double-click to work. A copy that
+  # went through something that drops permissions - zipped on a PC, say - loses
+  # that, and the README's way round it is to run it once by hand. This is that
+  # once, so put it back now, whether or not there is anything to install.
+  chmod +x "$DIR/Update Quiz Answers.command" 2>/dev/null || true
 
   # Only now, with DIR confirmed, is it safe to arm a trap that deletes things.
   STAGING="$DIR/.update-new"
   BACKUP="$DIR/.update-old"
+  TRASH="$DIR/.update-trash"
   trap cleanup EXIT
 
-  current="$(version_of "$DIR/manifest.json")"
-  say "$APP_NAME ${current:-(unknown version)}"
+  if ! recover_interrupted_run; then
+    say ''
+    say 'Update failed: the last update did not finish, and the files it moved'
+    say 'aside could not be put back. They are safe in the hidden ".update-old"'
+    say 'folder inside Quiz Answers. Nothing else was changed.'
+    pause
+    exit 1
+  fi
+
+  CURRENT="$(version_of "$DIR/manifest.json")"
+  say "$APP_NAME ${CURRENT:-(unknown version)}"
   say 'Checking for a newer version...'
 
   WORK="$(mktemp -d "${TMPDIR:-/tmp}/quiz-answers-update.XXXXXX")" || fail 'could not create a temporary folder.'
-  curl -fsSL --retry 2 --connect-timeout 20 -o "$WORK/latest.zip" "$ZIP_URL" ||
+  # GitHub answers with a redirect; never follow one off HTTPS.
+  curl -fsSL --proto-redir '=https' --retry 2 --connect-timeout 20 -o "$WORK/latest.zip" "$ZIP_URL" ||
     fail 'could not download the latest version. Check your internet connection and try again.'
 
   # Unpack beside the extension rather than in the temporary folder, so every
   # swap below is a rename on one disk - instant, and never half-done.
-  rm -rf "$STAGING" "$BACKUP"
+  rm -rf "$STAGING"
   mkdir "$STAGING" "$BACKUP" || fail "could not write to $DIR."
   unzip -q "$WORK/latest.zip" -d "$STAGING" || fail 'the download was damaged. Try again in a minute.'
 
@@ -197,9 +238,9 @@ main() {
   latest="$(version_of "$SRC/manifest.json")"
   [ -n "$latest" ] || fail 'the download has no version number.'
 
-  if ! newer "$latest" "${current:-0}"; then
+  if ! newer "$latest" "${CURRENT:-0}"; then
     say ''
-    say "You already have the latest version ($current)."
+    say "You already have the latest version ($CURRENT)."
     pause
     exit 0
   fi
@@ -217,15 +258,16 @@ main() {
   # Last, on purpose. The extension watches this file's version to know when to
   # restart, so it must not change until every other file is already in place.
   swap_in manifest.json || { rollback; fail 'could not replace manifest.json.'; }
-  FINISHED=1
 
-  # GitHub's ZIP keeps the launcher executable, but a copy that went through
-  # something that drops permissions would leave a double-click that does
-  # nothing. Cheap to put back.
+  # Done: the old version is now only clutter. Mark it so before anything else,
+  # so that a run cut off from here on - or a backup that will not go away - is
+  # never mistaken for one that did not finish. Then throw it away.
+  { : >"$BACKUP/.finished"; } 2>/dev/null
+  discard "$BACKUP" 2>/dev/null || true
   chmod +x "$DIR/Update Quiz Answers.command" 2>/dev/null || true
 
   say ''
-  say "Updated $APP_NAME from $current to $latest."
+  say "Updated $APP_NAME from $CURRENT to $latest."
   say ''
   say 'Your API key and settings are untouched: they live in Chrome, and this'
   say 'folder stayed exactly where it was.'

@@ -93,6 +93,29 @@ export async function pendingRestart() {
 }
 
 /**
+ * How many tabs hold a finished answer sheet. A restart clears
+ * chrome.storage.session, so every one of these would be lost - answers the
+ * user has already paid OpenAI for.
+ */
+export async function answersHeld() {
+  const all = await chrome.storage.session.get(null);
+  return Object.entries(all).filter(([key, job]) => key.startsWith('job:') && job?.status === 'done').length;
+}
+
+/**
+ * Asks the service worker to restart onto the new files. It is the only one
+ * that knows for certain whether answers are still being worked on, and it
+ * refuses then ({busy: true}) rather than throw away a request already paid for.
+ */
+export async function requestRestart() {
+  try {
+    return (await chrome.runtime.sendMessage({ type: 'restart' })) || { ok: false };
+  } catch {
+    return { ok: false };
+  }
+}
+
+/**
  * Restart onto new files if there are any, at most once per version per
  * RESTART_RETRY_MS. Returns true when a restart was started.
  */

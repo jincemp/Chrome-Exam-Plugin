@@ -47,7 +47,7 @@ const { parseQuestions, relaxCaps, parseResponsesPayload, parseChatPayload, clas
 const { formatAnswer, formatAll, sortAnswers } = await import('../src/format.js');
 const { ANSWER_SCHEMA, buildPrompt } = await import('../src/prompt.js');
 const { DEFAULT_SETTINGS, isInsecureBase, migrate, pageKey } = await import('../src/storage.js');
-const { compareVersions, checkForUpdate, pendingRestart, restartIfUpdated, UPDATE_MANIFEST_URL } = await import('../src/update.js');
+const { answersHeld, compareVersions, checkForUpdate, pendingRestart, requestRestart, restartIfUpdated, UPDATE_MANIFEST_URL } = await import('../src/update.js');
 
 /* ------------------------------------------------------- extractor harness */
 
@@ -1081,6 +1081,34 @@ await test('update: a half-written manifest on disk is not a reason to restart',
     assert.equal(await restartIfUpdated({ now: 0 }), false);
     assert.equal(reloads.length, 0);
   });
+});
+
+await test('update: only finished answer sheets count as something a restart would lose', async () => {
+  const saved = chrome.storage.session.get;
+  chrome.storage.session.get = async () => ({
+    'job:1': { status: 'done', answers: [{}] },
+    'job:2': { status: 'done', answers: [] },
+    'job:3': { status: 'thinking' }, // the worker, which knows what is really running, decides these
+    'job:4': { status: 'error' },
+    'something-else': { status: 'done' },
+  });
+  try {
+    assert.equal(await answersHeld(), 2);
+  } finally {
+    chrome.storage.session.get = saved;
+  }
+});
+
+await test('update: a restart request that cannot reach the worker reports failure rather than throwing', async () => {
+  const saved = chrome.runtime.sendMessage;
+  try {
+    chrome.runtime.sendMessage = async () => { throw new Error('Could not establish connection.'); };
+    assert.deepEqual(await requestRestart(), { ok: false });
+    chrome.runtime.sendMessage = async (m) => (m.type === 'restart' ? { ok: false, busy: true } : null);
+    assert.deepEqual(await requestRestart(), { ok: false, busy: true });
+  } finally {
+    chrome.runtime.sendMessage = saved;
+  }
 });
 
 /* -------------------------------------------------------------- appearance */

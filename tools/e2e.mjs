@@ -239,7 +239,7 @@ const server = http.createServer((req, res) => {
         answers = IMAGE_ANSWERS;
       }
 
-      res.writeHead(200, { 'content-type': 'application/json' }).end(JSON.stringify({
+      const reply = () => res.writeHead(200, { 'content-type': 'application/json' }).end(JSON.stringify({
         id: 'resp_test', status: 'completed', model: 'gpt-5.6-luna',
         output: [
           { type: 'reasoning', summary: [] },
@@ -249,6 +249,9 @@ const server = http.createServer((req, res) => {
         ],
         usage: { input_tokens: 900, output_tokens: 80 },
       }));
+      // A model that takes a while, so a job can be caught mid-run.
+      if (mode === 'slow') setTimeout(reply, 3000);
+      else reply();
     });
     return;
   }
@@ -323,7 +326,7 @@ try {
   await quiz.goto(`${origin}/quiz.html`);
   await quiz.waitForLoadState('domcontentloaded');
 
-  const runJob = (target = `${origin}/quiz.html`) => driver.evaluate(async (quizUrl) => {
+  const runJobOn = (page, target = `${origin}/quiz.html`) => page.evaluate(async (quizUrl) => {
     const [tab] = await chrome.tabs.query({ url: quizUrl });
     const key = `job:${tab.id}`;
     // Drop any previous run's record, or the poll below reads it and returns
@@ -340,6 +343,7 @@ try {
     const { [key]: record } = await chrome.storage.session.get(key);
     return { scan, record, timedOut: true };
   }, target);
+  const runJob = (target) => runJobOn(driver, target);
 
   const job = await runJob();
 
@@ -1052,37 +1056,44 @@ try {
 
   // What "Update Quiz Answers" leaves behind: new files in the same folder.
   const onDisk = JSON.parse(readFileSync(path.join(extDir, 'manifest.json'), 'utf8'));
-  onDisk.version = '99.0.1';
-  writeFileSync(path.join(extDir, 'manifest.json'), JSON.stringify(onDisk, null, 2));
-  published = '99.0.1';
-
-  const restartPopup = await openPopupFor(quizTabId);
-  await restartPopup.waitForSelector('#update:not([hidden])', { timeout: 10000 });
-  const restartLine = await restartPopup.textContent('#update');
-
-  check('once new files are in the folder, the popup offers to switch to them', () => {
-    assert.match(restartLine, /Version 99\.0\.1 is installed/);
-    assert.match(restartLine, /Restart to finish/);
-  });
-
-  const nextWorker = context.waitForEvent('serviceworker', { timeout: 20000 });
-  await restartPopup.click('#update-action').catch(() => { /* the click closes the popup under itself */ });
-  const reborn = await nextWorker.catch(() => null);
+  const installUpdate = (version) => {
+    onDisk.version = version;
+    writeFileSync(path.join(extDir, 'manifest.json'), JSON.stringify(onDisk, null, 2));
+    published = version;
+  };
 
   // The new worker's chrome.* bindings can lag its creation by a moment.
-  const readWorker = async (fn) => {
+  const evaluateIn = async (target, fn, arg) => {
     for (let i = 0; i < 50; i++) {
-      try { return await reborn.evaluate(fn); } catch { await new Promise((r) => setTimeout(r, 100)); }
+      try { return await target.evaluate(fn, arg); } catch { await new Promise((r) => setTimeout(r, 100)); }
     }
     return null;
   };
-  const after = reborn ? await readWorker(async () => ({
+
+  // 1. Nothing to lose. Earlier checks left answers on the quiz tab; clear them.
+  await driver.evaluate((id) => chrome.runtime.sendMessage({ type: 'cancel', tabId: id }), quizTabId);
+  installUpdate('99.0.1');
+
+  const restartPopup = await openPopupFor(quizTabId);
+  await restartPopup.waitForFunction(() => /Restart/.test(document.getElementById('get-answers').textContent), null, { timeout: 10000 }).catch(() => {});
+  const restartCta = await restartPopup.textContent('#get-answers');
+  const restartNote = await restartPopup.textContent('#idle-note');
+
+  check('once new files are in the folder and nothing would be lost, finishing the update is the main button', () => {
+    assert.match(restartCta, /Restart to finish the update/);
+    assert.match(restartNote, /Version 99\.0\.1 is installed/);
+  });
+
+  const nextWorker = context.waitForEvent('serviceworker', { timeout: 20000 });
+  await restartPopup.click('#get-answers').catch(() => { /* the click closes the popup under itself */ });
+  const reborn = await nextWorker.catch(() => null);
+  const after = reborn ? await evaluateIn(reborn, async () => ({
     version: chrome.runtime.getManifest().version,
     apiKey: (await chrome.storage.local.get('apiKey')).apiKey,
     id: chrome.runtime.id,
   })) : null;
 
-  check('"Restart to finish" brings the extension back on the new version', () => {
+  check('that button brings the extension back on the new version', () => {
     assert.ok(reborn, 'no new service worker appeared after the restart');
     assert.equal(after?.version, '99.0.1');
   });
@@ -1092,41 +1103,117 @@ try {
     assert.equal(after?.apiKey, 'sk-test-key');
   });
 
-  /* -------------------- and with no popup open: on its own, on a page load */
+  // Polled by hand: waitForFunction does not wait for an async predicate - the
+  // promise it returns is truthy, so it would never wait at all.
+  const waitForJob = async (page, id, status, ms) => {
+    for (let t = 0; t < ms; t += 100) {
+      const got = await page.evaluate(async (tabId) => (await chrome.storage.session.get(`job:${tabId}`))[`job:${tabId}`]?.status, id);
+      if (got === status) return got;
+      await new Promise((r) => setTimeout(r, 100));
+    }
+    return null;
+  };
 
-  // The path most people will actually hit: run the updater, carry on browsing,
-  // and the next page load anywhere wakes the worker, which switches over by
-  // itself. That needs a FRESH worker - the check runs at worker start-up - so
-  // stop the current one the way Chrome does when it goes idle.
-  onDisk.version = '99.0.2';
-  writeFileSync(path.join(extDir, 'manifest.json'), JSON.stringify(onDisk, null, 2));
-  published = '99.0.2';
+  // 2. Answers on an open tab. The restart closed every extension page, the
+  // driver included; this one is closed again before the automatic path is
+  // tested, because an open extension page holds a restart back by itself.
+  const driver2 = await context.newPage();
+  await driver2.goto(`chrome-extension://${extensionId}/options/options.html`);
 
+  mode = 'slow';
+  await driver2.evaluate((id) => chrome.runtime.sendMessage({ type: 'start', tabId: id, force: true }), quizTabId);
+  const midRun = await waitForJob(driver2, quizTabId, 'thinking', 10000);
+  const refused = await driver2.evaluate(() => chrome.runtime.sendMessage({ type: 'restart' }));
+
+  check('a restart asked for while answers are being worked on is refused, not paid for twice', () => {
+    assert.equal(midRun, 'thinking', 'the job was not caught mid-run');
+    assert.equal(refused?.busy, true, JSON.stringify(refused));
+  });
+
+  const finished = await waitForJob(driver2, quizTabId, 'done', 15000);
+  mode = 'responses';
+  installUpdate('99.0.2');
+
+  const heldPopup = await openPopupFor(quizTabId);
+  await heldPopup.waitForSelector('#update:not([hidden])', { timeout: 10000 }).catch(() => {});
+  const heldLine = await heldPopup.textContent('#update');
+  await heldPopup.close();
+  await driver2.close();
+  // Closing an extension page is itself a moment the worker checks for an
+  // update. Give a restart there time to happen, if one wrongly would, before
+  // stopping the worker - which would otherwise swallow it.
+  await new Promise((r) => setTimeout(r, 1500));
+
+  check('with answers on a tab, the popup says restarting would clear them', () => {
+    assert.equal(finished, 'done', 'the slow job never finished');
+    assert.match(heldLine, /Version 99\.0\.2 is installed/);
+    assert.match(heldLine, /once you close or leave the page with answers/);
+    assert.match(heldLine, /Restart now \(clears answers\)/);
+  });
+
+  // Now the automatic path: stop the worker the way Chrome does when it goes
+  // idle, and let a page load in some other tab wake it.
   const cdp = await context.newCDPSession(devPage);
-  const { targetInfos } = await cdp.send('Target.getTargets');
-  const swTarget = targetInfos.find((t) => t.type === 'service_worker' && t.url.includes(extensionId));
-  const silentWorker = context.waitForEvent('serviceworker', { timeout: 20000 });
-  if (swTarget) await cdp.send('Target.closeTarget', { targetId: swTarget.targetId }).catch(() => {});
-  // Any page load in any tab wakes the worker (it listens for tab updates).
+  const stopWorker = async () => {
+    const { targetInfos } = await cdp.send('Target.getTargets');
+    const sw = targetInfos.find((t) => t.type === 'service_worker' && t.url.includes(extensionId));
+    if (sw) await cdp.send('Target.closeTarget', { targetId: sw.targetId }).catch(() => {});
+    return !!sw;
+  };
+  // A worker that was really stopped and started again has lost this mark;
+  // that is the only proof the start-up check ran again.
+  const extWorker = () => context.serviceWorkers().filter((w) => w.url().includes(extensionId)).at(-1);
+  await evaluateIn(extWorker(), () => { globalThis.__e2eSeenBefore = true; });
+  const stopped = await stopWorker();
+  const elsewhere = await context.newPage();
+  await elsewhere.goto(`${origin}/long.html`).catch(() => {});
+  let kept = null;
+  for (let i = 0; i < 50 && !kept?.fresh; i++) {
+    await new Promise((r) => setTimeout(r, 200));
+    try {
+      kept = await extWorker()?.evaluate(async (id) => ({
+        fresh: !globalThis.__e2eSeenBefore,
+        version: chrome.runtime.getManifest().version,
+        status: (await chrome.storage.session.get(`job:${id}`))[`job:${id}`]?.status || null,
+        badge: await chrome.action.getBadgeText({ tabId: id }),
+      }), quizTabId);
+    } catch { /* between workers */ }
+  }
+  await new Promise((r) => setTimeout(r, 2000)); // time enough to restart, if it were going to
+  try {
+    kept = { ...kept, ...await extWorker()?.evaluate(async (id) => ({
+      version: chrome.runtime.getManifest().version,
+      status: (await chrome.storage.session.get(`job:${id}`))[`job:${id}`]?.status || null,
+      badge: await chrome.action.getBadgeText({ tabId: id }),
+    }), quizTabId) };
+  } catch { kept = { ...kept, version: 'restarting' }; }
+
+  check('the automatic restart never throws away answers still on an open tab', () => {
+    assert.ok(stopped && kept?.fresh, `the worker was not stopped and started again: ${JSON.stringify({ stopped, kept })}`);
+    assert.equal(kept.status, 'done', `the answer sheet is gone: ${JSON.stringify(kept)}`);
+    assert.ok(kept.badge, 'the answer count badge is gone');
+    assert.equal(kept.version, '99.0.1', 'it restarted with answers still held');
+  });
+
+  // 3. ...and it lands by itself the moment that page is left.
+  let quiet = extWorker() || null;
   await quiz.reload().catch(() => {});
-  let quiet = await silentWorker.catch(() => null);
-  // The first worker to wake is still 99.0.1; the one it restarts into is 99.0.2.
   let quietVersion = null;
-  for (let i = 0; i < 60 && quiet; i++) {
+  for (let i = 0; i < 75 && quiet; i++) {
     try {
       quietVersion = await quiet.evaluate(() => chrome.runtime.getManifest().version);
       if (quietVersion === '99.0.2') break;
     } catch { /* this worker is going away under the restart */ }
-    const newest = context.serviceWorkers().filter((w) => w.url().includes(extensionId)).at(-1);
-    if (newest && newest !== quiet) quiet = newest;
+    const latestWorker = context.serviceWorkers().filter((w) => w.url().includes(extensionId)).at(-1);
+    if (latestWorker && latestWorker !== quiet) quiet = latestWorker;
     await new Promise((r) => setTimeout(r, 200));
   }
 
-  check('with no popup open, the next page load switches it over by itself', () => {
-    assert.ok(swTarget, 'could not find the extension worker to stop');
+  check('once the page with answers is left, it switches over by itself', () => {
     assert.equal(quietVersion, '99.0.2', 'the extension did not pick up the new files on its own');
   });
 
+  await elsewhere.close();
   await devPage.close();
 } finally {
   await context.close();

@@ -67,9 +67,13 @@ function setVersion(dir, version, name = 'Quiz Answers') {
   writeFileSync(file, JSON.stringify(m, null, 2) + '\n');
 }
 
-/** An installed copy, at a path with spaces in it, as the README suggests. */
+/**
+ * An installed copy, at a path with spaces in it, as the README suggests - and
+ * square brackets, which PowerShell reads as wildcards wherever a path is not
+ * passed as a literal one.
+ */
 function installed(version = '1.7.0') {
-  const dir = mkdtempSync(path.join(scratch, 'Chrome Extensions '));
+  const dir = mkdtempSync(path.join(scratch, 'Chrome Extensions [old] '));
   const ext = path.join(dir, 'Chrome-Exam-Plugin-main');
   mkdirSync(ext);
   for (const entry of SHIPPED) {
@@ -156,6 +160,7 @@ function runUpdater(ext, env = {}, cmd = engine.cmd) {
 const noLeftovers = (ext) => {
   assert.equal(existsSync(path.join(ext, '.update-new')), false, 'staging folder left behind');
   assert.equal(existsSync(path.join(ext, '.update-old')), false, 'backup folder left behind');
+  assert.equal(existsSync(path.join(ext, '.update-trash')), false, 'trash folder left behind');
 };
 
 const versionIn = (ext) => JSON.parse(readFileSync(path.join(ext, 'manifest.json'), 'utf8')).version;
@@ -353,6 +358,7 @@ await test('closing the window mid-swap loses nothing', async () => {
   // cleanup, which once deleted that backup - the only copy left.
   const ext = installed('1.7.0');
   const top = readdirSync(ext).sort();
+  const before = snapshot(ext);
   served = { status: 200, body: latestZip('9.9.9') };
   const quit = await runUpdater(ext, { QUIZ_ANSWERS_QUIT_AFTER: '2' });
   assert.notEqual(quit.status, 0, `the hook should have ended the run:\n${quit.out}`);
@@ -360,11 +366,14 @@ await test('closing the window mid-swap loses nothing', async () => {
   assert.equal(aside.length, 3, `expected three entries in the backup, found: ${aside.join(', ')}`);
   assert.ok(top.some((n) => !existsSync(path.join(ext, n))), 'the hook should have left an entry moved aside');
 
-  // Offline next time: the folder is still made whole again.
+  // Offline next time: the folder is still made whole again - all of the old
+  // version, not some of each.
   served = { status: 404, body: Buffer.from('nope') };
-  assert.equal((await runUpdater(ext)).status, 1);
-  assert.deepEqual(readdirSync(ext).filter((n) => !n.startsWith('.update-')).sort(), top);
-  assert.equal(versionIn(ext), '1.7.0');
+  const offline = await runUpdater(ext);
+  assert.equal(offline.status, 1, offline.out);
+  assert.match(offline.out, /on version 1\.7\.0 again/);
+  assert.deepEqual(snapshot(ext), before, 'the folder is not back to the version it had');
+  noLeftovers(ext);
 
   // And online, it finishes the update.
   served = { status: 200, body: latestZip('9.9.9') };
@@ -374,6 +383,59 @@ await test('closing the window mid-swap loses nothing', async () => {
   assert.equal(readFileSync(path.join(ext, 'my notes.txt'), 'utf8'), 'mine\n');
   noLeftovers(ext);
 });
+
+await test('a rollback that could not put everything back is finished by the next run', async () => {
+  // Say a file was held open and the undo could not move it. The old copies
+  // then sit in the backup, and must never be thrown away with it.
+  const ext = installed('1.7.0');
+  const before = snapshot(ext);
+  served = { status: 200, body: latestZip('9.9.9') };
+  const first = await runUpdater(ext, { QUIZ_ANSWERS_FAIL_AFTER: '3', QUIZ_ANSWERS_FAIL_UNDO: '1' });
+  assert.equal(first.status, 1, first.out);
+  assert.match(first.out, /could not be put back yet/);
+  assert.doesNotMatch(first.out, /Nothing was changed/);
+  assert.equal(readdirSync(path.join(ext, '.update-old')).length, 3);
+
+  served = { status: 404, body: Buffer.from('nope') };
+  const offline = await runUpdater(ext);
+  assert.equal(offline.status, 1, offline.out);
+  assert.deepEqual(snapshot(ext), before, 'the next run must put the old version back whole');
+  noLeftovers(ext);
+});
+
+await test('a finished update whose backup could not be cleared away is not undone', async () => {
+  const ext = installed('9.9.9');
+  appendFileSync(path.join(ext, 'src', 'update.js'), '\n// the new code\n');
+  mkdirSync(path.join(ext, '.update-old', 'src'), { recursive: true });
+  writeFileSync(path.join(ext, '.update-old', 'src', 'update.js'), '// the OLD code\n');
+  writeFileSync(path.join(ext, '.update-old', '.finished'), '');
+  served = { status: 200, body: latestZip('9.9.9') };
+  const { status, out } = await runUpdater(ext);
+  assert.equal(status, 0, out);
+  assert.match(readFileSync(path.join(ext, 'src', 'update.js'), 'utf8'), /the new code/);
+  noLeftovers(ext);
+});
+
+if (engine.label === 'windows') {
+  await test('a folder Windows PowerShell cannot delete in one go (OneDrive) is still cleaned up', async () => {
+    const ext = installed('1.7.0');
+    served = { status: 200, body: latestZip('9.9.9') };
+    const { status, out } = await runUpdater(ext, { QUIZ_ANSWERS_ONEDRIVE: '1' });
+    assert.equal(status, 0, out);
+    assert.equal(versionIn(ext), '9.9.9');
+    noLeftovers(ext);
+  });
+}
+
+if (engine.label === 'mac') {
+  await test('a launcher moved out of the folder says so, instead of a bare error', async () => {
+    const desk = mkdtempSync(path.join(scratch, 'Desktop '));
+    cpSync(path.join(root, 'Update Quiz Answers.command'), path.join(desk, 'Update Quiz Answers.command'));
+    const { status, out } = await runUpdater(desk, {}, (f) => ['bash', [path.join(path.dirname(path.dirname(f)), 'Update Quiz Answers.command')]]);
+    assert.equal(status, 1, out);
+    assert.match(out, /has to stay inside the Quiz Answers folder/);
+  });
+}
 
 if (engine.label === 'windows') {
   await test('a PC that only allows restricted PowerShell gets an explanation, and no change', async () => {

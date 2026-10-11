@@ -298,7 +298,16 @@ Your API key and settings are never touched. The updater changes what is
 *inside* the folder and never moves it, so Chrome still sees the same
 extension — which is exactly the step that used to go wrong by hand. If
 anything fails partway, such as the internet dropping or a bad download, it
-puts every file back as it was and tells you so.
+puts every file back as it was and tells you so. If even that is cut short —
+the window closed, the computer switched off — the next double-click puts the
+old version back first.
+
+**When it switches over.** Chrome keeps running the old version until the
+extension restarts, and a restart clears any answers on your open tabs. So it
+restarts by itself only when that costs you nothing: no answers showing on any
+tab and none being worked on. If you are in the middle of a quiz, it waits until
+you close or leave that page — answers you have paid for are never thrown away.
+Quitting and reopening Chrome also switches it over.
 
 ### On a Mac
 
@@ -307,8 +316,9 @@ puts every file back as it was and tells you so.
 2. A Terminal window opens. It downloads the new version, swaps it into the
    folder, and finishes with *"Updated Quiz Answers from 1.8.0 to 1.9.0."*
    Press Return to close it.
-3. That is all. The extension switches to the new version by itself, usually
-   before you next click it. If the popup says **Restart to finish**, click that.
+3. Click the Quiz Answers icon. If the popup's button says **Restart to finish
+   the update**, click it, then click the icon again. If it has already
+   switched over by itself, there is nothing to do.
 
 **The first time only, your Mac will stop it.** It is a script that came from
 the internet, so macOS wants you to confirm it once. After that it just runs.
@@ -325,8 +335,13 @@ the internet, so macOS wants you to confirm it once. After that it just runs.
   **Open**, then click **Open** again.
 - If a box asks whether **"Terminal" would like to access files in your
   Documents folder**, click **Allow**. The updater has to be able to change the
-  folder. (If you clicked *Don't Allow*, the updater says how to turn it back
-  on.)
+  folder.
+
+  If you clicked *Don't Allow*, macOS does not ask again, and the updater can
+  only stop with *"Operation not permitted"*. To allow it afterwards: Apple menu
+  → **System Settings** → **Privacy & Security** → **Files & Folders** →
+  **Terminal**, and turn on the folder Quiz Answers is in (**Documents Folder**,
+  **Desktop Folder** or **Downloads Folder**). Then double-click it again.
 
 <details>
 <summary>If double-clicking says it "could not be executed"</summary>
@@ -345,8 +360,9 @@ block pasted commands. After one successful run the double-click works again.
    hides the end of file names, so there are two files with that name; the one
    you want has the type *Windows Batch File*. The other one is for Macs.
 2. A black window shows progress and finishes with *"Updated Quiz Answers from
-   …"*. Press Enter to close it. The extension switches over by itself, as on a
-   Mac.
+   …"*. Press Enter to close it.
+3. Click the Quiz Answers icon, and if the button says **Restart to finish the
+   update**, click it — as on a Mac.
 
 **The first time only, Windows may stop it**, because it came from the
 internet. If you ticked **Unblock** on the `.zip` before unzipping it (see
@@ -636,12 +652,14 @@ never update on their own.
   when Chrome quits.
 - The extension asks for `activeTab`, not for access to every site: it can only
   read a page in the moment you click its icon.
-- To tell you about updates, it reads the version number of the latest release
-  from GitHub — at most once every few hours, and only when you open the popup
-  or settings. That request carries nothing about you or the pages you read,
-  needs no extra permission, and is the only request the extension makes that
-  is not part of answering your questions. Nothing it downloads is run; the
-  number is just shown.
+- To tell you about updates, it reads the version number in the project's
+  `manifest.json` on GitHub — at most once every few hours, and only when you
+  open the popup or settings. Like any web request, it shows GitHub your IP
+  address, and Chrome adds this copy's extension ID, which is worked out from
+  the folder's location on your computer. It carries nothing about the pages
+  you read or your answers, needs no extra permission, and is the only request
+  the extension makes that is not part of answering your questions. Nothing it
+  downloads is run; the number is just shown.
 
 ## Troubleshooting
 

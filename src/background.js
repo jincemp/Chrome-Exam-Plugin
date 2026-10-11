@@ -7,7 +7,7 @@
 
 import { answerQuestions, OpenAIError, TruncatedError } from './openai.js';
 import { clearJob, getJob, getSettings, pageKey, setJob } from './storage.js';
-import { restartIfUpdated } from './update.js';
+import { answersHeld, restartIfUpdated } from './update.js';
 
 /*
  * A whole page in one request wherever it fits. Splitting is not free accuracy-
@@ -569,6 +569,18 @@ function stopKeepAlive() {
 chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
   (async () => {
     try {
+      // From the popup's or settings page's restart button, after an update.
+      if (message?.type === 'restart') {
+        if (running.size) {
+          sendResponse({ ok: false, busy: true });
+          return;
+        }
+        sendResponse({ ok: true });
+        // A moment for the reply to arrive before this worker goes away.
+        setTimeout(() => chrome.runtime.reload(), 100);
+        return;
+      }
+
       if (!Number.isInteger(message?.tabId)) {
         sendResponse({ ok: false, error: { message: 'Missing tab.' } });
         return;
@@ -601,6 +613,7 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
         await clearJob(message.tabId);
         await markIdle(message.tabId);
         sendResponse({ ok: true });
+        restartIfUpdatedWhenIdleSoon();
         return;
       }
 
@@ -638,12 +651,13 @@ chrome.tabs.onUpdated.addListener(async (tabId, changeInfo) => {
   running.delete(tabId);
   await clearJob(tabId);
   await markIdle(tabId);
+  restartIfUpdatedWhenIdleSoon();
 });
 
 chrome.tabs.onRemoved.addListener((tabId) => {
   running.get(tabId)?.abort();
   running.delete(tabId);
-  clearJob(tabId);
+  clearJob(tabId).then(restartIfUpdatedWhenIdleSoon, () => {});
 });
 
 // A fresh worker has no per-tab icon state, and session storage may still hold
@@ -667,17 +681,30 @@ async function restoreBadges() {
  * worker starts, and the worker starts often - any page load in any tab wakes
  * it - so an update usually lands on its own, before anyone looks.
  *
- * Never while the popup or settings page is open: a restart closes them under
- * the user. The popup offers its own "Restart to finish" instead. A fresh
- * worker is also never mid-job - a running job keeps the worker alive - so
- * this cannot cut an answer sheet off halfway.
+ * Only when a restart costs the user nothing:
+ *   - not while answers are being worked on, which the restart would abandon
+ *     after OpenAI has already been paid;
+ *   - not while any tab holds finished answers. A restart clears
+ *     chrome.storage.session, so they would silently vanish. Instead this
+ *     runs again whenever a tab's answers are cleared - the tab closed, moved
+ *     on, or was cancelled - so the update lands once the user is done. A
+ *     Chrome restart also loads the new files, with nothing to lose by then;
+ *   - not while the popup or settings page is open: a restart closes them
+ *     under the user. Both offer their own restart button instead.
+ * Any doubt - say, storage cannot be read - means no restart.
  */
 async function restartIfUpdatedWhenIdle() {
+  if (running.size) return;
   try {
     const open = await chrome.runtime.getContexts({ contextTypes: ['POPUP', 'TAB'] });
     if (open.length) return;
   } catch { /* getContexts needs Chrome 116, which the manifest already requires */ }
+  if (await answersHeld()) return;
   await restartIfUpdated();
 }
 
-restartIfUpdatedWhenIdle().catch(() => { /* an update check must never break startup */ });
+function restartIfUpdatedWhenIdleSoon() {
+  restartIfUpdatedWhenIdle().catch(() => { /* an update check must never break anything else */ });
+}
+
+restartIfUpdatedWhenIdleSoon();
