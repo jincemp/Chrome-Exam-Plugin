@@ -2,7 +2,7 @@ date: 2026-10-11
 agent: unassigned
 task: Report status, finish what did not need the user's machine, find out whether Chrome can update the extension by itself, then build the one-double-click updater the owner chose (1.8.0)
 outcome: shipped
-files_changed: 21
+files_changed: 22
 
 ## What I found
 
@@ -58,6 +58,16 @@ version. These were confirmed by reproduction:
   the whole folder, update.sh included. The friendly message in update.sh could
   never run, and the README promised it would.
 
+**A settings bug from 1.7.0, found while chasing an intermittent test.** The
+end-to-end test's first job sometimes never started, mostly when it ran
+straight after the updater suite. Its trace was "never started", not
+"cancelled". `getSettings()` migrated a fresh install and then wrote the
+*whole* settings object back, every default included, `apiKey: ''` among them.
+A key saved between that read and that write was silently wiped, and `start`
+then answered "No API key yet". The test hits the gap when the settings page is
+still starting as it saves its key. A real user could too, though the gap is
+milliseconds wide.
+
 ## What I changed
 
 - **`src/update.js`** (new) — the version check (6-hourly, CORS, no
@@ -109,7 +119,7 @@ version. These were confirmed by reproduction:
     the worst moment, an undo that cannot put files back, a finished run's
     stray backup, restricted PowerShell, the OneDrive delete path, and a moved
     launcher.
-  - `tools/test.mjs`: 13 new update tests, 130 in total.
+  - `tools/test.mjs`: 14 new tests (update and settings), 131 in total.
   - `tools/e2e.mjs`, in real Chromium:
     - the update notice needs no permission;
     - the restart keeps the ID and API key;
@@ -132,6 +142,11 @@ version. These were confirmed by reproduction:
 - **`.gitattributes`** — `.command`/`.sh` stay LF, and `.bat` is stored
   byte-for-byte. The launcher is committed 100755; both are checked by the
   updater test.
+- **`src/storage.js`** — a migration writes back only the fields it changed,
+  so it can never overwrite a key saved at the same moment. A unit test puts a
+  save inside that gap, and fails against the old whole-object write. The
+  browser test, which had failed 1 in 4 and 3 in 3 when run after the updater
+  suite, then passed 6 in 6.
 - `manifest.json` 1.8.0.
 
 ## What I did not do, and why
@@ -156,10 +171,6 @@ version. These were confirmed by reproduction:
   not a defect. It is the same trust as Download ZIP, which every install
   already uses. The hardening that would matter: 2FA on the owner's account,
   and signatures checked before unzipping.
-- **One unexplained e2e failure.** Of the many end-to-end runs today, one failed
-  at its very first job. The job record was never written within 10 s, and no
-  request reached the mock. It ran straight after the Windows updater suite.
-  Re-runs pass. Not reproduced, so not diagnosed.
 - **The data-safety reviewer's report was lost** to a safety stop. Its area was
   re-covered by the fixes and tests above, not by a second review.
 - **Accuracy of 1.7.0 is still unmeasured**, now across three sessions.

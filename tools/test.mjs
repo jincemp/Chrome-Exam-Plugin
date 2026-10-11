@@ -46,7 +46,7 @@ const { parseQuestions, relaxCaps, parseResponsesPayload, parseChatPayload, clas
         buildResponsesBody, buildChatBody, initialCaps, buildContentParts } = await import('../src/openai.js');
 const { formatAnswer, formatAll, sortAnswers } = await import('../src/format.js');
 const { ANSWER_SCHEMA, buildPrompt } = await import('../src/prompt.js');
-const { DEFAULT_SETTINGS, isInsecureBase, migrate, pageKey } = await import('../src/storage.js');
+const { DEFAULT_SETTINGS, getSettings, isInsecureBase, migrate, pageKey } = await import('../src/storage.js');
 const { answersHeld, compareVersions, checkForUpdate, pendingRestart, requestRestart, restartIfUpdated, UPDATE_MANIFEST_URL } = await import('../src/update.js');
 
 /* ------------------------------------------------------- extractor harness */
@@ -1081,6 +1081,29 @@ await test('update: a half-written manifest on disk is not a reason to restart',
     assert.equal(await restartIfUpdated({ now: 0 }), false);
     assert.equal(reloads.length, 0);
   });
+});
+
+await test('settings: upgrading a fresh install never writes over a key saved at the same moment', async () => {
+  // The read and the write of a migration are two steps. A key saved between
+  // them - the options page and the worker both run this - must survive.
+  const saved = chrome.storage.local;
+  const store = {};
+  chrome.storage.local = {
+    get: async (defaults) => {
+      const snapshot = { ...defaults, ...store };
+      store.apiKey = 'sk-just-pasted'; // lands after the read, before the write
+      return snapshot;
+    },
+    set: async (patch) => Object.assign(store, patch),
+  };
+  try {
+    const settings = await getSettings();
+    assert.equal(settings.settingsVersion, 2);
+    assert.equal(store.apiKey, 'sk-just-pasted');
+    assert.equal(store.settingsVersion, 2, 'the migration is still recorded');
+  } finally {
+    chrome.storage.local = saved;
+  }
 });
 
 await test('update: only finished answer sheets count as something a restart would lose', async () => {
