@@ -451,42 +451,65 @@ of two, and set a monthly cap on your OpenAI account.
 
 ## Share it with a friend
 
-There is no Web Store listing, so you pass them the folder directly. Two things
-to know before you do:
+There is no Web Store listing, but the project page is public, so sharing is
+just a link:
 
-- **The repository is private.** A friend clicking a GitHub link will see
-  nothing. Send them the files instead, or make the repository public.
-- **Everyone needs their own OpenAI key.** Do not share yours — there is no way
-  to cap what someone else spends on it, and whatever they run comes off your
-  card. Point them at *Get an OpenAI API key* above; it takes them five minutes.
+1. Send them **https://github.com/jincemp/Chrome-Exam-Plugin**.
+2. They follow [Install it on your Mac](#install-it-on-your-mac) from Step 1,
+   exactly as you did, then [Get an OpenAI API key](#get-an-openai-api-key).
 
-To send the files:
+**Everyone needs their own OpenAI key.** Do not share yours — there is no way to
+cap what someone else spends on it, and whatever they run comes off your card.
+Getting their own takes about five minutes.
 
-1. In Finder, right-click the extension folder → **Compress**. You get a `.zip`.
-2. Send it by AirDrop, Google Drive, Dropbox, or WeTransfer.
-   **Not Gmail as an attachment** — Gmail looks inside zip files, sees the
-   `.js` files an extension is made of, and refuses to send it. A Drive link
-   works fine.
-3. Tell them to follow [Install it on your Mac](#install-it-on-your-mac) from
-   **Step 2** onwards — they already have the files, so they skip the download —
-   and then [Get an OpenAI API key](#get-an-openai-api-key).
+They get their own copy, with their own key and their own bill. Nothing is
+shared between you. Updates work the same way for them as for you — see
+[Updating to a new version](#updating-to-a-new-version), and stress the part
+about the new folder replacing the old one *in the same place*. That is the
+step everyone trips over.
 
-They will get their own copy with their own key and their own bill. Nothing is
-shared between you.
+Nothing secret lives in the project page: your API key is stored in your
+browser, never in the files.
 
-Updates are manual for them too: send a new zip, and have them follow
-[Updating to a new version](#updating-to-a-new-version), skipping Step 3
-since the zip is the download. Stress the part about the new folder having to
-replace the old one *in the same place* — that is the step everyone trips over.
+<details>
+<summary>Sending the files directly instead</summary>
+
+If they cannot get to GitHub: in Finder, right-click the extension folder →
+**Compress**, and send the `.zip` by AirDrop or a Google Drive / Dropbox link.
+**Not as a Gmail attachment** — Gmail looks inside zip files, sees the `.js`
+files an extension is made of, and refuses to send it. They then start the
+install guide at Step 2, since they already have the files.
+</details>
 
 <details>
 <summary>What about the Chrome Web Store?</summary>
 
-Publishing would let people install it with one click and get updates
-automatically. It also means a one-off developer registration fee, a privacy
-policy, and a review that takes days and can be rejected — an extension that
-reads page content and talks to a third-party API gets looked at closely. For a
-handful of friends, the zip is the pragmatic answer.
+It is the only way Chrome will update the extension by itself: it checks on
+start-up and every few hours, and installs new versions silently. It does not
+have to be public — an **Unlisted** listing can be installed by anyone with
+the link, and a **Private** one only by Google accounts you name, ordinary
+Gmail accounts included.
+
+What it costs:
+
+- A one-time US$5 developer registration, and 2-Step Verification on that
+  Google account.
+- A privacy policy and data-use disclosures, because page text and images are
+  sent to OpenAI.
+- A review of the first version **and of every update** — usually a few days,
+  sometimes a few weeks. Unlisted and Private get exactly the same review as a
+  public listing, and every fix waits for it.
+- Approval is not guaranteed. The store's policies say it removes extensions
+  that "enable dishonest behavior". They do not define that or mention quizzes,
+  and similar extensions are listed, but a reviewer could still read this one
+  that way.
+- Everyone pastes their API key in once more when switching, because Chrome
+  treats the store copy as a different extension.
+
+Hosting the updates yourself instead is not an option on a Mac or a Windows PC:
+Chrome switches off extensions from outside the store unless the computer is
+centrally managed by an organisation. "Load unpacked" installs, like this one,
+never update on their own.
 </details>
 
 ## Settings
