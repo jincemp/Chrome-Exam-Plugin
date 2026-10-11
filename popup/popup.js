@@ -1,5 +1,6 @@
 import { formatAll, sortAnswers } from '../src/format.js';
 import { getSettings, jobKey, pageKey } from '../src/storage.js';
+import { answersHeld, checkForUpdate, pendingRestart, requestRestart } from '../src/update.js';
 
 const $ = (id) => document.getElementById(id);
 
@@ -19,9 +20,19 @@ const BUSY_LABELS = {
 let tab = null;
 let settings = null;
 
+/**
+ * Set when an update is on disk and restarting loses nothing. Until the
+ * restart, the files the popup and page reader load are already the new ones,
+ * while the worker still runs the old code - so a new job waits for it.
+ */
+let restartFirst = null;
+
 function show(name) {
   const changed = panels[name].hidden;
   for (const [key, el] of Object.entries(panels)) el.hidden = key !== name;
+  // While an update waits, the idle panel's own button finishes it; anywhere
+  // else, the line at the foot does.
+  if (restartFirst) $('update').hidden = name === 'idle';
 
   // Hiding the panel that held focus drops the user on <body>. Move focus with
   // the state instead, so the result is reachable and gets announced.
@@ -147,8 +158,14 @@ function renderBusy(job) {
 }
 
 function renderIdle(note) {
-  $('idle-note').textContent = note || '';
   const cta = $('get-answers');
+  if (restartFirst) {
+    cta.textContent = 'Restart to finish the update';
+    $('idle-note').textContent = `Version ${restartFirst} is installed. After the restart, click the icon again to get answers.`;
+  } else {
+    cta.textContent = 'Get answers';
+    $('idle-note').textContent = note || '';
+  }
   cta.disabled = false;
   show('idle');
   cta.focus();
@@ -180,6 +197,16 @@ async function send(message) {
   }
 }
 
+async function restart() {
+  const res = await requestRestart();
+  // On success this page closes with the restart, so only a refusal is left to show.
+  if (res?.busy) {
+    $('update-text').textContent = 'Answers are still being worked on. Restart once they are done.';
+    $('update-action').hidden = true;
+    $('update').hidden = false;
+  }
+}
+
 async function start(force) {
   $('get-answers').disabled = true;
   renderBusy({ status: 'reading' });
@@ -192,8 +219,8 @@ async function previewCount() {
   const res = await send({ type: 'scan', tabId: tab.id });
 
   // The user may have pressed Get answers while this was in flight; whatever it
-  // has to say is now stale.
-  if (panels.idle.hidden) return;
+  // has to say is now stale. Or there is an update to finish first.
+  if (panels.idle.hidden || restartFirst) return;
 
   if (!res?.ok) {
     if (res?.error?.message) renderError({ error: res.error });
@@ -210,7 +237,7 @@ async function previewCount() {
 
 $('open-options').addEventListener('click', () => chrome.runtime.openOptionsPage());
 $('error-options').addEventListener('click', () => chrome.runtime.openOptionsPage());
-$('get-answers').addEventListener('click', () => start(false));
+$('get-answers').addEventListener('click', () => (restartFirst ? restart() : start(false)));
 $('retry').addEventListener('click', () => start(true));
 
 // Chrome only shows a permission prompt during a user gesture, so this has to
@@ -258,7 +285,49 @@ chrome.storage.onChanged.addListener((changes, area) => {
   if (change) render(change.newValue || null);
 });
 
+/**
+ * The line at the foot of the popup: either a newer version is out, or the
+ * updater has already put one on disk and a restart will switch to it. Runs
+ * beside the main render and never holds it up.
+ */
+async function renderUpdate() {
+  const text = $('update-text');
+  const action = $('update-action');
+
+  const installed = await pendingRestart();
+  if (installed) {
+    let held = 1; // if it cannot be told, assume there is something to lose
+    try { held = await answersHeld(); } catch { /* keep the assumption */ }
+    if (!held) {
+      // Nothing to lose: finishing the update becomes the main button.
+      restartFirst = installed;
+      text.textContent = `Version ${installed} is installed.`;
+      action.textContent = 'Restart to finish';
+      action.onclick = restart;
+      if (!panels.idle.hidden) renderIdle('');
+      else $('update').hidden = false;
+      return;
+    }
+    const pages = held === 1 ? 'the page' : `the ${held} pages`;
+    text.textContent = `Version ${installed} is installed. It switches over by itself once you close or leave ${pages} with answers.`;
+    action.textContent = 'Restart now (clears answers)';
+    action.onclick = restart;
+    $('update').hidden = false;
+    return;
+  }
+
+  const { available, latest } = await checkForUpdate();
+  if (!available) return;
+  text.textContent = `Version ${latest} is out. To get it, double-click "Update Quiz Answers" in the extension's folder.`;
+  action.textContent = 'Where is the folder?';
+  // The details page for an unpacked extension shows the folder it loads from.
+  action.onclick = () => chrome.tabs.create({ url: `chrome://extensions/?id=${chrome.runtime.id}` });
+  $('update').hidden = false;
+}
+
 (async function init() {
+  renderUpdate().catch(() => { /* an update hint is never worth an error */ });
+
   // Both at once: a progress write landing between two awaits would otherwise
   // reach the storage listener with one of them still unset.
   const [tabs, loaded] = await Promise.all([

@@ -1,0 +1,6 @@
+# Line endings for the double-click updaters, whatever the committer's platform.
+# The Mac scripts must be LF or the shebang line breaks; the .bat is stored
+# exactly as written (CRLF, one line) so nothing rewrites it.
+*.command text eol=lf
+*.sh text eol=lf
+*.bat -text

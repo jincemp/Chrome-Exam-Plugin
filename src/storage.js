@@ -38,8 +38,12 @@ export async function getSettings() {
 
   const upgraded = migrate(settings);
   if (upgraded !== settings) {
+    // Only what the migration changed. Writing the whole object would also
+    // write every default - an empty apiKey among them - over anything saved
+    // between the read above and this write, such as a key just pasted in.
+    const patch = Object.fromEntries(Object.entries(upgraded).filter(([key, value]) => value !== settings[key]));
     try {
-      await chrome.storage.local.set(upgraded);
+      await chrome.storage.local.set(patch);
     } catch { /* a failed write just means we try again next time */ }
   }
   return upgraded;

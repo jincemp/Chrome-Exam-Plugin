@@ -24,7 +24,7 @@ still gets answered.
 3. [Use it](#use-it) — the part you actually came for.
 
 **Already installed?** [Updating to a new version](#updating-to-a-new-version)
-is the section you want, and [When an answer is wrong](#when-an-answer-is-wrong)
+is the section you want — from 1.8.0 it is a double-click — and [When an answer is wrong](#when-an-answer-is-wrong)
 is the one to read if the answers are not what you expected.
 [Settings](#settings), [Cost](#cost) and [Troubleshooting](#troubleshooting) are
 further down, and [Share it with a friend](#share-it-with-a-friend) covers
@@ -149,22 +149,29 @@ icon and it will tell you so, with an **Open settings** button.
 Follow [Get an OpenAI API key](#get-an-openai-api-key) below, then come back and
 [use it](#use-it).
 
-### A warning Chrome will show you
+### Leave Developer mode on
 
-Every so often — usually after a restart — Chrome pops up a bubble saying
-**"Disable developer mode extensions"** or asking whether to keep them.
+Quiz Answers only runs while **Developer mode** is on. If it is ever switched
+off, Chrome turns the extension off straight away, and its card on
+`chrome://extensions` says *"Turn on developer mode to use this extension, which
+can't be reviewed by the Chrome Web Store."*
 
-**Keep them / dismiss it.** Chrome shows this for *any* extension installed from
-a folder rather than the Web Store. It is not a warning about this extension
-specifically, and nothing is wrong. If you click the button that disables them,
-Quiz Answers stops working until you go back to `chrome://extensions` and switch
-it on again.
+Nothing is lost when that happens. Switch Developer mode back on and the
+extension comes back by itself, with your key and settings.
+
+If you use more than one Chrome profile, Developer mode is set per profile. It
+needs to be on in the profile where you installed Quiz Answers.
 
 <h3 id="installing-on-windows">Installing on Windows</h3>
 
-Same process, three differences:
+Same process, four differences:
 
-- **Unzipping:** right-click the downloaded `.zip` → **Extract All…** →
+- **Before unzipping:** right-click the downloaded `.zip` → **Properties**. At
+  the bottom of the **General** tab, next to *"This file came from another
+  computer…"*, tick **Unblock**, then click **OK**. This stops Windows asking
+  for permission later, the first time you run the updater. If there is no
+  Unblock box, there is nothing to do.
+- **Unzipping:** right-click the `.zip` → **Extract All…** →
   **Extract**. Windows often produces a folder inside a folder here, so the
   `manifest.json` check at the end of Step 2 matters more than it does on a Mac.
 - **Where to put it:** anywhere permanent, e.g.
@@ -278,8 +285,118 @@ quit Chrome. Nothing is written to disk except your settings.
 
 ## Updating to a new version
 
-There is no automatic update — nothing tells you a new version exists, and
-nothing installs it for you. When you want the latest, you fetch it yourself.
+From version 1.8.0, updating is a double-click. The popup tells you when there
+is something new, at the bottom:
+
+> Version 1.9.0 is out. To get it, double-click "Update Quiz Answers" in the
+> extension's folder. <u>Where is the folder?</u>
+
+**Where is the folder?** opens the extension's page in Chrome, which shows the
+folder's location next to *Loaded from*.
+
+Your API key and settings are never touched. The updater changes what is
+*inside* the folder and never moves it, so Chrome still sees the same
+extension — which is exactly the step that used to go wrong by hand. If
+anything fails partway, such as the internet dropping or a bad download, it
+puts every file back as it was and tells you so. If even that is cut short —
+the window closed, the computer switched off — the next double-click puts the
+old version back first.
+
+**When it switches over.** Chrome keeps running the old version until the
+extension restarts, and a restart clears any answers on your open tabs. So it
+restarts by itself only when that costs you nothing: no answers showing on any
+tab and none being worked on. If you are in the middle of a quiz, it waits until
+you close or leave that page — answers you have paid for are never thrown away.
+Quitting and reopening Chrome also switches it over.
+
+### On a Mac
+
+1. In Finder, open the extension's folder and double-click
+   **Update Quiz Answers**.
+2. A Terminal window opens. It downloads the new version, swaps it into the
+   folder, and finishes with *"Updated Quiz Answers from 1.8.0 to 1.9.0."*
+   Press Return to close it.
+3. Click the Quiz Answers icon. If the popup's button says **Restart to finish
+   the update**, click it, then click the icon again. If it has already
+   switched over by itself, there is nothing to do.
+
+**The first time only, your Mac will stop it.** It is a script that came from
+the internet, so macOS wants you to confirm it once. After that it just runs.
+
+- **macOS 15 Sequoia or newer** (including 26 and 27): a box says
+  *"Update Quiz Answers.command" Not Opened*. Click **Done** — **not** *Move to
+  Trash*. Then open the Apple menu → **System Settings** → **Privacy &
+  Security**, scroll down to **Security**, and click **Open Anyway** next to the
+  message about "Update Quiz Answers.command". Confirm with your password or
+  Touch ID. If your Mac account is not an administrator, an administrator has
+  to type their password here. That button only appears for about an hour after
+  the warning; if it is not there, double-click the file again first.
+- **macOS 14 Sonoma or older**: right-click (or Control-click) the file, choose
+  **Open**, then click **Open** again.
+- If a box asks whether **"Terminal" would like to access files in your
+  Documents folder**, click **Allow**. The updater has to be able to change the
+  folder.
+
+  If you clicked *Don't Allow*, macOS does not ask again, and the updater can
+  only stop with *"Operation not permitted"*. To allow it afterwards: Apple menu
+  → **System Settings** → **Privacy & Security** → **Files & Folders** →
+  **Terminal**, and turn on the folder Quiz Answers is in (**Documents Folder**,
+  **Desktop Folder** or **Downloads Folder**). Then double-click it again.
+
+<details>
+<summary>If double-clicking says it "could not be executed"</summary>
+
+The file lost its *executable* setting on the way — usually because the folder
+was zipped or copied by something other than a Mac. Run it like this instead:
+open **Terminal** (Applications → Utilities), type `bash` and a space, drag
+**Update Quiz Answers** from Finder into the Terminal window, and press Return.
+Type the word yourself rather than pasting it: newer versions of macOS can
+block pasted commands. After one successful run the double-click works again.
+</details>
+
+### On Windows
+
+1. Open the extension's folder and double-click **Update Quiz Answers**. Windows
+   hides the end of file names, so there are two files with that name; the one
+   you want has the type *Windows Batch File*. The other one is for Macs.
+2. A black window shows progress and finishes with *"Updated Quiz Answers from
+   …"*. Press Enter to close it.
+3. Click the Quiz Answers icon, and if the button says **Restart to finish the
+   update**, click it — as on a Mac.
+
+**The first time only, Windows may stop it**, because it came from the
+internet. If you ticked **Unblock** on the `.zip` before unzipping it (see
+[Installing on Windows](#installing-on-windows)), nothing appears. Otherwise
+you get one of these, depending on the PC:
+
+- **Open File - Security Warning**, *"The publisher could not be verified"*:
+  click **Run**.
+- A blue box, **Windows protected your PC**: click **More info**, then **Run
+  anyway**.
+- A message that the file was **blocked**, with no button to run it anyway
+  (Windows 11 with *Smart App Control* on): close the message, right-click
+  **Update Quiz Answers** → **Properties**, tick **Unblock** at the bottom of
+  the **General** tab, click **OK**, and double-click it again.
+
+After that it runs straight away. Two cases where it cannot run, and you need
+[Updating by hand](#updating-by-hand) instead:
+
+- The window says Windows only lets it run in a **restricted mode**. Smart App
+  Control, or a policy on a work or school PC, allows only approved scripts.
+- The window says **running scripts is disabled**, or flashes and closes before
+  you can read it. The PC's settings, usually set by whoever manages it, block
+  scripts.
+
+### The first time: getting the updater
+
+The updater arrived in **1.8.0**, so a copy older than that does not have it
+yet. Follow [Updating by hand](#updating-by-hand) one last time. From then on,
+the double-click is all you need.
+
+## Updating by hand
+
+For the very first update to 1.8.0, or whenever you would rather not use the
+updater.
 
 **The one rule that matters:** the new files must end up in the **same folder,
 at the same path**, as the old ones. Chrome recognises an unpacked extension by
@@ -451,42 +568,64 @@ of two, and set a monthly cap on your OpenAI account.
 
 ## Share it with a friend
 
-There is no Web Store listing, so you pass them the folder directly. Two things
-to know before you do:
+There is no Web Store listing, but the project page is public, so sharing is
+just a link:
 
-- **The repository is private.** A friend clicking a GitHub link will see
-  nothing. Send them the files instead, or make the repository public.
-- **Everyone needs their own OpenAI key.** Do not share yours — there is no way
-  to cap what someone else spends on it, and whatever they run comes off your
-  card. Point them at *Get an OpenAI API key* above; it takes them five minutes.
+1. Send them **https://github.com/jincemp/Chrome-Exam-Plugin**.
+2. They follow [Install it on your Mac](#install-it-on-your-mac) from Step 1,
+   exactly as you did, then [Get an OpenAI API key](#get-an-openai-api-key).
 
-To send the files:
+**Everyone needs their own OpenAI key.** Do not share yours — there is no way to
+cap what someone else spends on it, and whatever they run comes off your card.
+Getting their own takes about five minutes.
 
-1. In Finder, right-click the extension folder → **Compress**. You get a `.zip`.
-2. Send it by AirDrop, Google Drive, Dropbox, or WeTransfer.
-   **Not Gmail as an attachment** — Gmail looks inside zip files, sees the
-   `.js` files an extension is made of, and refuses to send it. A Drive link
-   works fine.
-3. Tell them to follow [Install it on your Mac](#install-it-on-your-mac) from
-   **Step 2** onwards — they already have the files, so they skip the download —
-   and then [Get an OpenAI API key](#get-an-openai-api-key).
+They get their own copy, with their own key and their own bill. Nothing is
+shared between you. Updates work the same way for them as for you: the popup
+says when there is a new version, and they double-click **Update Quiz
+Answers** — see [Updating to a new version](#updating-to-a-new-version).
 
-They will get their own copy with their own key and their own bill. Nothing is
-shared between you.
+Nothing secret lives in the project page: your API key is stored in your
+browser, never in the files.
 
-Updates are manual for them too: send a new zip, and have them follow
-[Updating to a new version](#updating-to-a-new-version), skipping Step 3
-since the zip is the download. Stress the part about the new folder having to
-replace the old one *in the same place* — that is the step everyone trips over.
+<details>
+<summary>Sending the files directly instead</summary>
+
+If they cannot get to GitHub: in Finder, right-click the extension folder →
+**Compress**, and send the `.zip` by AirDrop or a Google Drive / Dropbox link.
+**Not as a Gmail attachment** — Gmail looks inside zip files, sees the `.js`
+files an extension is made of, and refuses to send it. They then start the
+install guide at Step 2, since they already have the files.
+</details>
 
 <details>
 <summary>What about the Chrome Web Store?</summary>
 
-Publishing would let people install it with one click and get updates
-automatically. It also means a one-off developer registration fee, a privacy
-policy, and a review that takes days and can be rejected — an extension that
-reads page content and talks to a third-party API gets looked at closely. For a
-handful of friends, the zip is the pragmatic answer.
+It is the only way Chrome will update the extension by itself: it checks on
+start-up and every few hours, and installs new versions silently. It does not
+have to be public — an **Unlisted** listing can be installed by anyone with
+the link, and a **Private** one only by Google accounts you name, ordinary
+Gmail accounts included.
+
+What it costs:
+
+- A one-time US$5 developer registration, and 2-Step Verification on that
+  Google account.
+- A privacy policy and data-use disclosures, because page text and images are
+  sent to OpenAI.
+- A review of the first version **and of every update** — usually a few days,
+  sometimes a few weeks. Unlisted and Private get exactly the same review as a
+  public listing, and every fix waits for it.
+- Approval is not guaranteed. The store's policies say it removes extensions
+  that "enable dishonest behavior". They do not define that or mention quizzes,
+  and similar extensions are listed, but a reviewer could still read this one
+  that way.
+- Everyone pastes their API key in once more when switching, because Chrome
+  treats the store copy as a different extension.
+
+Hosting the updates yourself instead is not an option on a Mac or a Windows PC:
+Chrome switches off extensions from outside the store unless the computer is
+centrally managed by an organisation. "Load unpacked" installs, like this one,
+never update on their own.
 </details>
 
 ## Settings
@@ -513,6 +652,14 @@ handful of friends, the zip is the pragmatic answer.
   when Chrome quits.
 - The extension asks for `activeTab`, not for access to every site: it can only
   read a page in the moment you click its icon.
+- To tell you about updates, it reads the version number in the project's
+  `manifest.json` on GitHub — at most once every few hours, and only when you
+  open the popup or settings. Like any web request, it shows GitHub your IP
+  address, and Chrome adds this copy's extension ID, which is worked out from
+  the folder's location on your computer. It carries nothing about the pages
+  you read or your answers, needs no extra permission, and is the only request
+  the extension makes that is not part of answering your questions. Nothing it
+  downloads is run; the number is just shown.
 
 ## Troubleshooting
 
@@ -539,6 +686,10 @@ refreshed list.
 **"Your OpenAI account is out of credit."** Add credit at
 [platform.openai.com/settings/organization/billing](https://platform.openai.com/settings/organization/billing).
 API credit is separate from a ChatGPT Plus subscription.
+
+**The icon is gone or does nothing, and the card says "Turn on developer
+mode…".** Developer mode was switched off. Switch it back on — see
+[Leave Developer mode on](#leave-developer-mode-on).
 
 **Nothing happens at all.** Open `chrome://extensions`, find Quiz Answers, click
 **service worker** to open its console, and look for errors. After editing any
@@ -569,12 +720,16 @@ popup does not cancel it.
 | `src/openai.js` | API client: retries, endpoint fallback, error mapping |
 | `src/prompt.js` | Instructions and the JSON schema for answers |
 | `src/storage.js` | Settings and per-tab job records |
+| `src/update.js` | Says when a newer version is out, and restarts onto new files once the updater has put them in place |
+| `Update Quiz Answers.command` / `.bat` | The double-click updaters for Mac and Windows; each is a one-line launcher for the script in `updater/` |
+| `updater/` | `update.sh` (Mac) and `update.ps1` (Windows): download the latest release and swap it into this folder, in place, with rollback |
 | `src/format.js` | `Q1: b) 230.34` |
 | `popup/` | The dropdown |
 | `options/` | Settings page |
 | `tools/make_icons.py` | Regenerates `icons/` from code |
 | `tools/check.sh` | Syntax-checks every file |
 | `tools/test.mjs` | Unit tests, including the extractor against a real DOM |
+| `tools/updater-test.mjs` | Runs both updaters against a local server: success, every failure, rollback, self-replacement |
 | `tools/e2e.mjs` | Loads the extension into Chromium against a mock OpenAI |
 | `tools/preview.mjs` | Screenshots every popup and options state |
 | `tools/inspect.mjs` | Shows what a saved page extracts to, for diagnosing a bad page |
@@ -585,6 +740,7 @@ popup does not cancel it.
 ```sh
 npm install     # dev tooling only — the extension itself has no dependencies
 npm test        # unit tests
+npm run test:updater  # the Mac updater; also the Windows one if pwsh is installed (or PWSH=/path/to/pwsh)
 npm run e2e     # end-to-end, in a real browser
 npm run check   # syntax
 npm run preview # writes screenshots/

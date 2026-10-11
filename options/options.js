@@ -1,5 +1,6 @@
 import { DEFAULT_SETTINGS, getSettings, isInsecureBase, setSettings } from '../src/storage.js';
 import { listModels } from '../src/openai.js';
+import { answersHeld, checkForUpdate, pendingRestart, requestRestart } from '../src/update.js';
 
 const $ = (id) => document.getElementById(id);
 
@@ -76,6 +77,38 @@ function showVersion(settings) {
     $('version').textContent = 'unknown';
   }
   $('active-model').textContent = settings.model;
+  showUpdate().catch(() => { /* an update hint is never worth an error */ });
+}
+
+/**
+ * Same two states as the popup's foot line. The restart lives here as a button
+ * because the worker deliberately will not restart while this page is open -
+ * doing so would close it mid-edit.
+ */
+async function showUpdate() {
+  const installed = await pendingRestart();
+  if (installed) {
+    let held = 1; // if it cannot be told, assume there is something to lose
+    try { held = await answersHeld(); } catch { /* keep the assumption */ }
+    $('update-status-text').textContent = `Version ${installed} is installed.`;
+    $('update-restart').textContent = held ? 'Restart now (clears answers on open tabs)' : 'Restart now';
+    $('update-restart').hidden = false;
+    $('update-restart').onclick = async () => {
+      const res = await requestRestart();
+      // On success this page closes with the restart, so only a refusal is left to show.
+      if (res?.busy) {
+        $('update-status-text').textContent =
+          `Version ${installed} is installed. Answers are still being worked on in a tab - restart once they are done.`;
+      }
+    };
+    $('update-status').hidden = false;
+    return;
+  }
+  const { available, latest } = await checkForUpdate();
+  if (!available) return;
+  $('update-status-text').textContent =
+    `Version ${latest} is out. To get it, double-click "Update Quiz Answers" in this extension's folder.`;
+  $('update-status').hidden = false;
 }
 
 async function load() {
