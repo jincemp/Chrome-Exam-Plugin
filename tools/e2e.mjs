@@ -112,7 +112,10 @@ const CORRECTED_ANSWERS = {
 
 /* ------------------------------------------------------- mock OpenAI + page */
 
-const seen = { bodies: [], paths: [] };
+const seen = { bodies: [], paths: [], updateChecks: [] };
+
+/** The version the mock "GitHub" says is published. Defaults to this build: no update. */
+let published = JSON.parse(readFileSync(path.join(root, 'manifest.json'), 'utf8')).version;
 
 /** Flipped between scenarios to exercise the client's fallback paths. */
 let mode = 'responses';
@@ -155,6 +158,16 @@ const server = http.createServer((req, res) => {
         <iframe src="http://localhost:${port}/quiz.html" width="800" height="600"></iframe>
       </main></body></html>`,
     );
+    return;
+  }
+
+  // Stands in for raw.githubusercontent.com. Served with the same CORS header
+  // GitHub sends, and fetched via localhost - an origin this test extension is
+  // NOT granted - so the update check passing here means it needs no permission.
+  if (url.pathname === '/update/manifest.json') {
+    seen.updateChecks.push(req.headers.origin || '');
+    res.writeHead(200, { 'content-type': 'text/plain; charset=utf-8', 'access-control-allow-origin': '*' })
+      .end(JSON.stringify({ name: 'Quiz Answers', version: published }));
     return;
   }
 
@@ -259,6 +272,12 @@ for (const entry of ['manifest.json', 'src', 'popup', 'options', 'icons']) {
 const manifest = JSON.parse(readFileSync(path.join(extDir, 'manifest.json'), 'utf8'));
 manifest.host_permissions = [...manifest.host_permissions, `${origin}/*`];
 writeFileSync(path.join(extDir, 'manifest.json'), JSON.stringify(manifest, null, 2));
+
+// Ask the mock, not the real GitHub, whether there is an update.
+const updateJs = path.join(extDir, 'src', 'update.js');
+const realUpdateUrl = 'https://raw.githubusercontent.com/jincemp/Chrome-Exam-Plugin/main/manifest.json';
+assert.ok(readFileSync(updateJs, 'utf8').includes(realUpdateUrl), 'src/update.js no longer has the URL this test rewrites');
+writeFileSync(updateJs, readFileSync(updateJs, 'utf8').replace(realUpdateUrl, `http://localhost:${port}/update/manifest.json`));
 
 const userDataDir = mkdtempSync(path.join(tmpdir(), 'quiz-profile-'));
 const context = await chromium.launchPersistentContext(userDataDir, {
@@ -976,6 +995,139 @@ try {
     assert.equal(seen.bodies.at(-1).model, 'gpt-5.6-sol');
     assert.equal(effortSent(seen.bodies.at(-1)), 'high');
   });
+
+  /* --------------------------------------------- hearing about an update */
+
+  const openPopupFor = async (tabId) => {
+    const page = await context.newPage();
+    await page.addInitScript((id) => {
+      const real = chrome.tabs.query.bind(chrome.tabs);
+      chrome.tabs.query = async (info) => (info.active ? [await chrome.tabs.get(id)] : real(info));
+    }, tabId);
+    await page.goto(`chrome-extension://${extensionId}/popup/popup.html`);
+    return page;
+  };
+
+  published = '99.0.0';
+  seen.updateChecks.length = 0;
+  await driver.evaluate(() => chrome.storage.local.remove('updateCheck'));
+  const upPopup = await openPopupFor(quizTabId);
+  await upPopup.waitForSelector('#update:not([hidden])', { timeout: 10000 });
+  const updateLine = await upPopup.textContent('#update');
+  const granted = await driver.evaluate(() => chrome.permissions.getAll());
+
+  check('the popup says when a newer version is published', () => {
+    assert.match(updateLine, /Version 99\.0\.0 is out/);
+    assert.match(updateLine, /Update Quiz Answers/, 'it must say what to double-click');
+  });
+
+  check('checking for updates needs no new permission', () => {
+    assert.equal(seen.updateChecks.length, 1, 'the popup should have asked once');
+    assert.match(seen.updateChecks[0], /^chrome-extension:\/\//, 'and from the extension itself');
+    assert.ok(!granted.origins.some((o) => o.includes('localhost')), `localhost was granted: ${granted.origins}`);
+  });
+
+  const [folderTab] = await Promise.all([
+    context.waitForEvent('page', { timeout: 10000 }),
+    upPopup.click('#update-action'),
+  ]);
+  await folderTab.waitForLoadState('domcontentloaded').catch(() => {});
+
+  check('"Where is the folder?" opens this extension\'s details page, which shows the path', () => {
+    assert.equal(folderTab.url(), `chrome://extensions/?id=${extensionId}`);
+  });
+
+  await folderTab.close();
+  await upPopup.close();
+
+  /* ------------------------------- picking up files the updater replaced */
+
+  // A real "Load unpacked" install always has Developer mode on - it is how
+  // the extension got there. This harness loads it with --load-extension, where
+  // Developer mode starts off and a self-reload would disable the extension
+  // instead (see src/update.js). Turn it on, as the user already has.
+  const devPage = await context.newPage();
+  await devPage.goto('chrome://extensions');
+  await devPage.evaluate(() => chrome.developerPrivate.updateProfileConfiguration({ inDeveloperMode: true }));
+
+  // What "Update Quiz Answers" leaves behind: new files in the same folder.
+  const onDisk = JSON.parse(readFileSync(path.join(extDir, 'manifest.json'), 'utf8'));
+  onDisk.version = '99.0.1';
+  writeFileSync(path.join(extDir, 'manifest.json'), JSON.stringify(onDisk, null, 2));
+  published = '99.0.1';
+
+  const restartPopup = await openPopupFor(quizTabId);
+  await restartPopup.waitForSelector('#update:not([hidden])', { timeout: 10000 });
+  const restartLine = await restartPopup.textContent('#update');
+
+  check('once new files are in the folder, the popup offers to switch to them', () => {
+    assert.match(restartLine, /Version 99\.0\.1 is installed/);
+    assert.match(restartLine, /Restart to finish/);
+  });
+
+  const nextWorker = context.waitForEvent('serviceworker', { timeout: 20000 });
+  await restartPopup.click('#update-action').catch(() => { /* the click closes the popup under itself */ });
+  const reborn = await nextWorker.catch(() => null);
+
+  // The new worker's chrome.* bindings can lag its creation by a moment.
+  const readWorker = async (fn) => {
+    for (let i = 0; i < 50; i++) {
+      try { return await reborn.evaluate(fn); } catch { await new Promise((r) => setTimeout(r, 100)); }
+    }
+    return null;
+  };
+  const after = reborn ? await readWorker(async () => ({
+    version: chrome.runtime.getManifest().version,
+    apiKey: (await chrome.storage.local.get('apiKey')).apiKey,
+    id: chrome.runtime.id,
+  })) : null;
+
+  check('"Restart to finish" brings the extension back on the new version', () => {
+    assert.ok(reborn, 'no new service worker appeared after the restart');
+    assert.equal(after?.version, '99.0.1');
+  });
+
+  check('the saved API key survives the restart - same folder, same extension', () => {
+    assert.equal(after?.id, extensionId, 'the extension identity must not change');
+    assert.equal(after?.apiKey, 'sk-test-key');
+  });
+
+  /* -------------------- and with no popup open: on its own, on a page load */
+
+  // The path most people will actually hit: run the updater, carry on browsing,
+  // and the next page load anywhere wakes the worker, which switches over by
+  // itself. That needs a FRESH worker - the check runs at worker start-up - so
+  // stop the current one the way Chrome does when it goes idle.
+  onDisk.version = '99.0.2';
+  writeFileSync(path.join(extDir, 'manifest.json'), JSON.stringify(onDisk, null, 2));
+  published = '99.0.2';
+
+  const cdp = await context.newCDPSession(devPage);
+  const { targetInfos } = await cdp.send('Target.getTargets');
+  const swTarget = targetInfos.find((t) => t.type === 'service_worker' && t.url.includes(extensionId));
+  const silentWorker = context.waitForEvent('serviceworker', { timeout: 20000 });
+  if (swTarget) await cdp.send('Target.closeTarget', { targetId: swTarget.targetId }).catch(() => {});
+  // Any page load in any tab wakes the worker (it listens for tab updates).
+  await quiz.reload().catch(() => {});
+  let quiet = await silentWorker.catch(() => null);
+  // The first worker to wake is still 99.0.1; the one it restarts into is 99.0.2.
+  let quietVersion = null;
+  for (let i = 0; i < 60 && quiet; i++) {
+    try {
+      quietVersion = await quiet.evaluate(() => chrome.runtime.getManifest().version);
+      if (quietVersion === '99.0.2') break;
+    } catch { /* this worker is going away under the restart */ }
+    const newest = context.serviceWorkers().filter((w) => w.url().includes(extensionId)).at(-1);
+    if (newest && newest !== quiet) quiet = newest;
+    await new Promise((r) => setTimeout(r, 200));
+  }
+
+  check('with no popup open, the next page load switches it over by itself', () => {
+    assert.ok(swTarget, 'could not find the extension worker to stop');
+    assert.equal(quietVersion, '99.0.2', 'the extension did not pick up the new files on its own');
+  });
+
+  await devPage.close();
 } finally {
   await context.close();
   server.close();

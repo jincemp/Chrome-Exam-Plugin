@@ -1,5 +1,6 @@
 import { DEFAULT_SETTINGS, getSettings, isInsecureBase, setSettings } from '../src/storage.js';
 import { listModels } from '../src/openai.js';
+import { checkForUpdate, pendingRestart } from '../src/update.js';
 
 const $ = (id) => document.getElementById(id);
 
@@ -76,6 +77,28 @@ function showVersion(settings) {
     $('version').textContent = 'unknown';
   }
   $('active-model').textContent = settings.model;
+  showUpdate().catch(() => { /* an update hint is never worth an error */ });
+}
+
+/**
+ * Same two states as the popup's foot line. The restart lives here as a button
+ * because the worker deliberately will not restart while this page is open -
+ * doing so would close it mid-edit.
+ */
+async function showUpdate() {
+  const installed = await pendingRestart();
+  if (installed) {
+    $('update-status-text').textContent = `Version ${installed} is installed.`;
+    $('update-restart').hidden = false;
+    $('update-restart').onclick = () => chrome.runtime.reload();
+    $('update-status').hidden = false;
+    return;
+  }
+  const { available, latest } = await checkForUpdate();
+  if (!available) return;
+  $('update-status-text').textContent =
+    `Version ${latest} is out. To get it, double-click "Update Quiz Answers" in this extension's folder.`;
+  $('update-status').hidden = false;
 }
 
 async function load() {

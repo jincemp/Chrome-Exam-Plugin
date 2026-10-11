@@ -100,3 +100,8 @@ button:disabled { opacity: 0.6; cursor: default; }
 .version .hint { margin-top: 4px; }
 .status.ok { color: var(--fg); }
 .status.bad { color: var(--fg); font-weight: 600; }
+
+.update-status { display: block; margin-top: 6px; color: var(--fg); }
+.update-status[hidden] { display: none; }
+.update-status button { margin-left: 8px; padding: 3px 10px; font-size: 12px; }
+.update-status button[hidden] { display: none; }

@@ -47,6 +47,7 @@ const { parseQuestions, relaxCaps, parseResponsesPayload, parseChatPayload, clas
 const { formatAnswer, formatAll, sortAnswers } = await import('../src/format.js');
 const { ANSWER_SCHEMA, buildPrompt } = await import('../src/prompt.js');
 const { DEFAULT_SETTINGS, isInsecureBase, migrate, pageKey } = await import('../src/storage.js');
+const { compareVersions, checkForUpdate, pendingRestart, restartIfUpdated, UPDATE_MANIFEST_URL } = await import('../src/update.js');
 
 /* ------------------------------------------------------- extractor harness */
 
@@ -927,6 +928,159 @@ await test('verify: the question-count guess is dropped on the second pass', asy
   // It counts the whole page, but the second pass is only asked about a few.
   const p = buildPrompt({ text: '4. Calculate it.', questionCount: 10, drafts: DRAFTS });
   assert.doesNotMatch(p.user, /rough scan/);
+});
+
+/* ------------------------------------------------------------------ update */
+
+/**
+ * Runs fn with chrome.runtime / chrome.storage.local / fetch swapped for fakes,
+ * and puts the shared stub back afterwards whatever happens.
+ */
+async function withFakes({ running = '1.7.0', onDisk = running, stored = {} } = {}, fn) {
+  const saved = { runtime: chrome.runtime, local: chrome.storage.local, fetch: globalThis.fetch };
+  const store = { ...stored };
+  const reloads = [];
+  chrome.runtime = {
+    ...saved.runtime,
+    getManifest: () => ({ version: running }),
+    getURL: (p) => `chrome-extension://test-id/${p}`,
+    reload: () => reloads.push(1),
+  };
+  chrome.storage.local = {
+    get: async (key) => ({ [key]: store[key] }),
+    set: async (patch) => Object.assign(store, patch),
+  };
+  globalThis.fetch = async (url) => {
+    if (!String(url).startsWith('chrome-extension://')) throw new Error(`unexpected fetch ${url}`);
+    if (onDisk instanceof Error) throw onDisk;
+    return { ok: true, json: async () => ({ version: onDisk }) };
+  };
+  try {
+    return await fn({ store, reloads });
+  } finally {
+    chrome.runtime = saved.runtime;
+    chrome.storage.local = saved.local;
+    globalThis.fetch = saved.fetch;
+  }
+}
+
+/** A fake GitHub that serves `version` and counts how often it is asked. */
+const github = (version, { status = 200, fail = false } = {}) => {
+  const calls = [];
+  const impl = async (url, init) => {
+    calls.push({ url, init });
+    if (fail) throw new TypeError('Failed to fetch');
+    return { ok: status === 200, status, json: async () => ({ version }) };
+  };
+  return { impl, calls };
+};
+
+const HOUR = 60 * 60 * 1000;
+
+await test('update: versions compare numerically, part by part', async () => {
+  assert.equal(compareVersions('1.10.0', '1.9.0'), 1, 'not as strings');
+  assert.equal(compareVersions('1.7.0', '1.7.0'), 0);
+  assert.equal(compareVersions('1.7', '1.7.0'), 0, 'missing parts count as zero');
+  assert.equal(compareVersions('1.7.0', '1.8.0'), -1);
+  assert.equal(compareVersions('2.0.0', '1.99.99'), 1);
+});
+
+await test('update: the check reads the published manifest, uncached', async () => {
+  const gh = github('1.8.0');
+  await withFakes({}, async () => {
+    const r = await checkForUpdate({ fetchImpl: gh.impl, now: 1000 });
+    assert.deepEqual(r, { current: '1.7.0', latest: '1.8.0', available: true });
+  });
+  assert.equal(gh.calls[0].url, UPDATE_MANIFEST_URL);
+  assert.match(UPDATE_MANIFEST_URL, /^https:\/\/raw\.githubusercontent\.com\/jincemp\/Chrome-Exam-Plugin\/main\/manifest\.json$/);
+  assert.equal(gh.calls[0].init.cache, 'no-store');
+});
+
+await test('update: same or older on GitHub is not offered', async () => {
+  for (const published of ['1.7.0', '1.6.0']) {
+    await withFakes({}, async () => {
+      const r = await checkForUpdate({ fetchImpl: github(published).impl, now: 1000 });
+      assert.equal(r.available, false, `offered ${published} over 1.7.0`);
+    });
+  }
+});
+
+await test('update: GitHub is asked at most every few hours', async () => {
+  const gh = github('1.8.0');
+  await withFakes({}, async () => {
+    await checkForUpdate({ fetchImpl: gh.impl, now: 0 });
+    const again = await checkForUpdate({ fetchImpl: gh.impl, now: 2 * HOUR });
+    assert.equal(again.available, true, 'the cached answer still says an update is out');
+    await checkForUpdate({ fetchImpl: gh.impl, now: 7 * HOUR });
+  });
+  assert.equal(gh.calls.length, 2, 'once at the start and once after the window, not on every popup open');
+});
+
+await test('update: offline keeps the last known answer and tries again next time', async () => {
+  await withFakes({ stored: { updateCheck: { latest: '1.8.0', checkedAt: 0 } } }, async ({ store }) => {
+    const gh = github('ignored', { fail: true });
+    const r = await checkForUpdate({ fetchImpl: gh.impl, now: 9 * HOUR });
+    assert.equal(r.available, true, 'a failed check must not make a known update disappear');
+    assert.equal(store.updateCheck.checkedAt, 0, 'and must not count as having checked');
+  });
+});
+
+await test('update: a missing file on GitHub is not re-requested on every open', async () => {
+  const gh = github('1.8.0', { status: 404 });
+  await withFakes({}, async () => {
+    const r = await checkForUpdate({ fetchImpl: gh.impl, now: 0 });
+    assert.equal(r.available, false);
+    await checkForUpdate({ fetchImpl: gh.impl, now: HOUR });
+  });
+  assert.equal(gh.calls.length, 1);
+});
+
+await test('update: only a plain version number from GitHub is ever shown', async () => {
+  // It is displayed in the popup. Text, not HTML, but still: numbers only.
+  for (const junk of ['<img src=x onerror=alert(1)>', '9.9.9; rm -rf', '', 'latest', '1..2', 42]) {
+    await withFakes({}, async () => {
+      const r = await checkForUpdate({ fetchImpl: github(junk).impl, now: 0 });
+      assert.equal(r.latest, null, `accepted ${JSON.stringify(junk)}`);
+      assert.equal(r.available, false);
+    });
+  }
+});
+
+await test('update: files on disk matching the running version mean no restart', async () => {
+  await withFakes({ running: '1.7.0', onDisk: '1.7.0' }, async ({ reloads }) => {
+    assert.equal(await pendingRestart(), null);
+    assert.equal(await restartIfUpdated({ now: 0 }), false);
+    assert.equal(reloads.length, 0);
+  });
+});
+
+await test('update: replaced files trigger exactly one restart', async () => {
+  await withFakes({ running: '1.7.0', onDisk: '1.8.0' }, async ({ reloads }) => {
+    assert.equal(await pendingRestart(), '1.8.0');
+    assert.equal(await restartIfUpdated({ now: 0 }), true);
+    assert.equal(reloads.length, 1);
+  });
+});
+
+await test('update: a restart that did not take never becomes a loop', async () => {
+  // With Developer mode off, a reload leaves the extension disabled rather than
+  // updated, and the next worker start would see the same mismatch again.
+  await withFakes({ running: '1.7.0', onDisk: '1.8.0' }, async ({ reloads }) => {
+    await restartIfUpdated({ now: 0 });
+    await restartIfUpdated({ now: 60 * 1000 });
+    await restartIfUpdated({ now: 5 * 60 * 1000 });
+    assert.equal(reloads.length, 1, 'one attempt per version within the window');
+    await restartIfUpdated({ now: 11 * 60 * 1000 });
+    assert.equal(reloads.length, 2, 'and another try once the window has passed');
+  });
+});
+
+await test('update: a half-written manifest on disk is not a reason to restart', async () => {
+  await withFakes({ running: '1.7.0', onDisk: new SyntaxError('Unexpected end of JSON input') }, async ({ reloads }) => {
+    assert.equal(await pendingRestart(), null);
+    assert.equal(await restartIfUpdated({ now: 0 }), false);
+    assert.equal(reloads.length, 0);
+  });
 });
 
 /* -------------------------------------------------------------- appearance */

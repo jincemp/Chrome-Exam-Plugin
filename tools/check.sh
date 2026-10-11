@@ -18,6 +18,13 @@ for f in $(find . -name '*.js' -not -path './node_modules/*' -not -path './.git/
   if [ -n "$out" ]; then printf 'FAIL %s\n%s\n' "$f" "$out"; else printf 'ok   %s\n' "$f"; fi
 done
 
+# The Mac updater and its launcher. bash -n only parses, so this is fast and
+# safe; tools/updater-test.mjs is what actually runs them.
+for f in updater/update.sh "Update Quiz Answers.command"; do
+  [ -f "$f" ] || continue
+  if out="$(bash -n "$f" 2>&1)"; then printf 'ok   %s\n' "$f"; else printf 'FAIL %s\n%s\n' "$f" "$out"; fail=1; fi
+done
+
 if [ -f manifest.json ]; then
   if node -e 'JSON.parse(require("fs").readFileSync("manifest.json","utf8"))' 2>/dev/null; then
     printf 'ok   manifest.json\n'

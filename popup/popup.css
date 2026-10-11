@@ -179,3 +179,19 @@ body {
   font-size: 11px;
   line-height: 1.35;
 }
+
+/* update ----------------------------------------------------------------- */
+
+/* Quiet on purpose: worth knowing, never worth more attention than the answers. */
+.update {
+  margin: 10px 2px 0;
+  color: var(--muted);
+  font-size: 11px;
+  line-height: 1.4;
+}
+.update[hidden] { display: none; }
+.update .link-btn {
+  font-size: inherit;
+  color: var(--fg);
+  text-decoration: underline;
+}

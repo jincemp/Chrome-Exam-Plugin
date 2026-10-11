@@ -1,5 +1,6 @@
 import { formatAll, sortAnswers } from '../src/format.js';
 import { getSettings, jobKey, pageKey } from '../src/storage.js';
+import { checkForUpdate, pendingRestart } from '../src/update.js';
 
 const $ = (id) => document.getElementById(id);
 
@@ -258,7 +259,36 @@ chrome.storage.onChanged.addListener((changes, area) => {
   if (change) render(change.newValue || null);
 });
 
+/**
+ * The line at the foot of the popup: either a newer version is out, or the
+ * updater has already put one on disk and a restart will switch to it. Runs
+ * beside the main render and never holds it up.
+ */
+async function renderUpdate() {
+  const text = $('update-text');
+  const action = $('update-action');
+
+  const installed = await pendingRestart();
+  if (installed) {
+    text.textContent = `Version ${installed} is installed.`;
+    action.textContent = 'Restart to finish';
+    action.onclick = () => chrome.runtime.reload();
+    $('update').hidden = false;
+    return;
+  }
+
+  const { available, latest } = await checkForUpdate();
+  if (!available) return;
+  text.textContent = `Version ${latest} is out. To get it, double-click "Update Quiz Answers" in the extension's folder.`;
+  action.textContent = 'Where is the folder?';
+  // The details page for an unpacked extension shows the folder it loads from.
+  action.onclick = () => chrome.tabs.create({ url: `chrome://extensions/?id=${chrome.runtime.id}` });
+  $('update').hidden = false;
+}
+
 (async function init() {
+  renderUpdate().catch(() => { /* an update hint is never worth an error */ });
+
   // Both at once: a progress write landing between two awaits would otherwise
   // reach the storage listener with one of them still unset.
   const [tabs, loaded] = await Promise.all([

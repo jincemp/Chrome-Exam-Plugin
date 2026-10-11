@@ -24,7 +24,7 @@ still gets answered.
 3. [Use it](#use-it) — the part you actually came for.
 
 **Already installed?** [Updating to a new version](#updating-to-a-new-version)
-is the section you want, and [When an answer is wrong](#when-an-answer-is-wrong)
+is the section you want — from 1.8.0 it is a double-click — and [When an answer is wrong](#when-an-answer-is-wrong)
 is the one to read if the answers are not what you expected.
 [Settings](#settings), [Cost](#cost) and [Troubleshooting](#troubleshooting) are
 further down, and [Share it with a friend](#share-it-with-a-friend) covers
@@ -278,8 +278,77 @@ quit Chrome. Nothing is written to disk except your settings.
 
 ## Updating to a new version
 
-There is no automatic update — nothing tells you a new version exists, and
-nothing installs it for you. When you want the latest, you fetch it yourself.
+From version 1.8.0, updating is a double-click. The popup tells you when there
+is something new, at the bottom:
+
+> Version 1.9.0 is out. To get it, double-click "Update Quiz Answers" in the
+> extension's folder. <u>Where is the folder?</u>
+
+**Where is the folder?** opens the extension's page in Chrome, which shows the
+folder's location next to *Loaded from*.
+
+Your API key and settings are never touched. The updater changes what is
+*inside* the folder and never moves it, so Chrome still sees the same
+extension — which is exactly the step that used to go wrong by hand. If
+anything fails partway, such as the internet dropping or a bad download, it
+puts every file back as it was and tells you so.
+
+### On a Mac
+
+1. In Finder, open the extension's folder and double-click
+   **Update Quiz Answers**.
+2. A Terminal window opens. It downloads the new version, swaps it into the
+   folder, and finishes with *"Updated Quiz Answers from 1.8.0 to 1.9.0."*
+   Press Return to close it.
+3. That is all. The extension switches to the new version by itself, usually
+   before you next click it. If the popup says **Restart to finish**, click that.
+
+**The first time only, your Mac will stop it.** It is a script that came from
+the internet, so macOS wants you to confirm it once. After that it just runs.
+
+- **macOS 15 Sequoia or newer** (including 26 and 27): a box says
+  *"Update Quiz Answers.command" Not Opened*. Click **Done** — **not** *Move to
+  Trash*. Then open the Apple menu → **System Settings** → **Privacy &
+  Security**, scroll down to **Security**, and click **Open Anyway** next to the
+  message about "Update Quiz Answers.command". Confirm with your password or
+  Touch ID. That button only appears for about an hour after the warning; if
+  it is not there, double-click the file again first.
+- **macOS 14 Sonoma or older**: right-click (or Control-click) the file, choose
+  **Open**, then click **Open** again.
+- If a box asks whether **"Terminal" would like to access files in your
+  Documents folder**, click **Allow**. The updater has to be able to change the
+  folder. (If you clicked *Don't Allow*, the updater says how to turn it back
+  on.)
+
+<details>
+<summary>If double-clicking says it "could not be executed"</summary>
+
+The file lost its *executable* setting on the way — usually because the folder
+was zipped or copied by something other than a Mac. Run it like this instead:
+open **Terminal** (Applications → Utilities), type `bash` and a space, drag
+**Update Quiz Answers** from Finder into the Terminal window, and press Return.
+Type the word yourself rather than pasting it: newer versions of macOS can
+block pasted commands. After one successful run the double-click works again.
+</details>
+
+### On Windows
+
+1. Open the extension's folder and double-click **Update Quiz Answers** (the
+   one marked *Windows Batch File*).
+2. WINDOWS-FIRST-RUN-PLACEHOLDER
+3. A window shows progress and finishes with *"Updated Quiz Answers from …"*.
+   Press Enter to close it. The extension switches over by itself, as on a Mac.
+
+### The first time: getting the updater
+
+The updater arrived in **1.8.0**, so a copy older than that does not have it
+yet. Follow [Updating by hand](#updating-by-hand) one last time. From then on,
+the double-click is all you need.
+
+## Updating by hand
+
+For the very first update to 1.8.0, or whenever you would rather not use the
+updater.
 
 **The one rule that matters:** the new files must end up in the **same folder,
 at the same path**, as the old ones. Chrome recognises an unpacked extension by
@@ -463,10 +532,9 @@ cap what someone else spends on it, and whatever they run comes off your card.
 Getting their own takes about five minutes.
 
 They get their own copy, with their own key and their own bill. Nothing is
-shared between you. Updates work the same way for them as for you — see
-[Updating to a new version](#updating-to-a-new-version), and stress the part
-about the new folder replacing the old one *in the same place*. That is the
-step everyone trips over.
+shared between you. Updates work the same way for them as for you: the popup
+says when there is a new version, and they double-click **Update Quiz
+Answers** — see [Updating to a new version](#updating-to-a-new-version).
 
 Nothing secret lives in the project page: your API key is stored in your
 browser, never in the files.
@@ -536,6 +604,12 @@ never update on their own.
   when Chrome quits.
 - The extension asks for `activeTab`, not for access to every site: it can only
   read a page in the moment you click its icon.
+- To tell you about updates, it reads the version number of the latest release
+  from GitHub — at most once every few hours, and only when you open the popup
+  or settings. That request carries nothing about you or the pages you read,
+  needs no extra permission, and is the only request the extension makes that
+  is not part of answering your questions. Nothing it downloads is run; the
+  number is just shown.
 
 ## Troubleshooting
 
@@ -592,12 +666,16 @@ popup does not cancel it.
 | `src/openai.js` | API client: retries, endpoint fallback, error mapping |
 | `src/prompt.js` | Instructions and the JSON schema for answers |
 | `src/storage.js` | Settings and per-tab job records |
+| `src/update.js` | Says when a newer version is out, and restarts onto new files once the updater has put them in place |
+| `Update Quiz Answers.command` / `.bat` | The double-click updaters for Mac and Windows; each is a one-line launcher for the script in `updater/` |
+| `updater/` | `update.sh` (Mac) and `update.ps1` (Windows): download the latest release and swap it into this folder, in place, with rollback |
 | `src/format.js` | `Q1: b) 230.34` |
 | `popup/` | The dropdown |
 | `options/` | Settings page |
 | `tools/make_icons.py` | Regenerates `icons/` from code |
 | `tools/check.sh` | Syntax-checks every file |
 | `tools/test.mjs` | Unit tests, including the extractor against a real DOM |
+| `tools/updater-test.mjs` | Runs both updaters against a local server: success, every failure, rollback, self-replacement |
 | `tools/e2e.mjs` | Loads the extension into Chromium against a mock OpenAI |
 | `tools/preview.mjs` | Screenshots every popup and options state |
 | `tools/inspect.mjs` | Shows what a saved page extracts to, for diagnosing a bad page |
@@ -608,6 +686,7 @@ popup does not cancel it.
 ```sh
 npm install     # dev tooling only — the extension itself has no dependencies
 npm test        # unit tests
+npm run test:updater  # the Mac updater; also the Windows one if pwsh is installed (or PWSH=/path/to/pwsh)
 npm run e2e     # end-to-end, in a real browser
 npm run check   # syntax
 npm run preview # writes screenshots/

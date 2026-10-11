@@ -7,6 +7,7 @@
 
 import { answerQuestions, OpenAIError, TruncatedError } from './openai.js';
 import { clearJob, getJob, getSettings, pageKey, setJob } from './storage.js';
+import { restartIfUpdated } from './update.js';
 
 /*
  * A whole page in one request wherever it fits. Splitting is not free accuracy-
@@ -660,3 +661,23 @@ async function restoreBadges() {
     }
   } catch { /* nothing to restore */ }
 }
+
+/*
+ * Picks up files "Update Quiz Answers" has replaced. This runs every time the
+ * worker starts, and the worker starts often - any page load in any tab wakes
+ * it - so an update usually lands on its own, before anyone looks.
+ *
+ * Never while the popup or settings page is open: a restart closes them under
+ * the user. The popup offers its own "Restart to finish" instead. A fresh
+ * worker is also never mid-job - a running job keeps the worker alive - so
+ * this cannot cut an answer sheet off halfway.
+ */
+async function restartIfUpdatedWhenIdle() {
+  try {
+    const open = await chrome.runtime.getContexts({ contextTypes: ['POPUP', 'TAB'] });
+    if (open.length) return;
+  } catch { /* getContexts needs Chrome 116, which the manifest already requires */ }
+  await restartIfUpdated();
+}
+
+restartIfUpdatedWhenIdle().catch(() => { /* an update check must never break startup */ });
