@@ -29,6 +29,7 @@ BACKUP=''
 SRC=''
 SWAPPED=()
 COUNT=0
+FINISHED=0
 
 say() { printf '%s\n' "$*"; }
 
@@ -68,30 +69,43 @@ newer() {
 cleanup() {
   [ -n "$WORK" ] && rm -rf "$WORK"
   [ -n "$STAGING" ] && rm -rf "$STAGING"
-  [ -n "$BACKUP" ] && rm -rf "$BACKUP"
+  # BACKUP holds the only copy of every old entry swapped out so far. It goes
+  # only once the update has finished or been fully undone. Closing the window
+  # mid-swap also ends up here, and then the next run restores from it.
+  if [ -n "$BACKUP" ] && { [ "$FINISHED" = 1 ] || [ "${#SWAPPED[@]}" -eq 0 ]; }; then rm -rf "$BACKUP"; fi
   return 0
 }
 
 fail() {
   say ''
   say "Update failed: $*"
-  say 'Nothing was changed - Quiz Answers is exactly as it was.'
+  if [ "${#SWAPPED[@]}" -gt 0 ]; then
+    say 'Some of the old files could not be put back yet. They are safe in the'
+    say 'hidden ".update-old" folder inside Quiz Answers. Double-click'
+    say '"Update Quiz Answers" again to finish.'
+  else
+    say 'Nothing was changed - Quiz Answers is exactly as it was.'
+  fi
   pause
   exit 1
 }
 
 # Undoes every swap made so far, newest first, so a failure partway through
-# never leaves Chrome loading half of one version and half of another.
+# never leaves Chrome loading half of one version and half of another. An
+# entry that cannot be put back stays in SWAPPED, which keeps BACKUP.
 rollback() {
-  local i n
+  local i n kept
+  kept=()
   i=${#SWAPPED[@]}
   while [ "$i" -gt 0 ]; do
     i=$((i - 1))
     n="${SWAPPED[i]}"
-    rm -rf "$DIR/$n"
-    if [ -e "$BACKUP/$n" ]; then mv "$BACKUP/$n" "$DIR/$n"; fi
+    if rm -rf "$DIR/$n" && { [ ! -e "$BACKUP/$n" ] || mv "$BACKUP/$n" "$DIR/$n"; }; then
+      continue
+    fi
+    kept+=("$n")
   done
-  SWAPPED=()
+  SWAPPED=("${kept[@]}")
 }
 
 # Moves one top-level entry from the download into place. The old one waits in
@@ -104,6 +118,9 @@ swap_in() {
   if [ -n "$QUIZ_ANSWERS_TRACE" ]; then printf '%s\n' "$n" >>"$QUIZ_ANSWERS_TRACE"; fi # test hook only
   if [ -e "$DIR/$n" ]; then mv "$DIR/$n" "$BACKUP/$n" || return 1; fi
   SWAPPED+=("$n")
+  if [ -n "$QUIZ_ANSWERS_QUIT_AFTER" ] && [ "$COUNT" -ge "$QUIZ_ANSWERS_QUIT_AFTER" ]; then
+    kill -HUP $$ # test hook only: what closing the Terminal window right here does
+  fi
   mv "$SRC/$n" "$DIR/$n" || return 1
   COUNT=$((COUNT + 1))
 }
@@ -200,6 +217,7 @@ main() {
   # Last, on purpose. The extension watches this file's version to know when to
   # restart, so it must not change until every other file is already in place.
   swap_in manifest.json || { rollback; fail 'could not replace manifest.json.'; }
+  FINISHED=1
 
   # GitHub's ZIP keeps the launcher executable, but a copy that went through
   # something that drops permissions would leave a double-click that does
@@ -214,6 +232,8 @@ main() {
   say ''
   say 'Last step: click the Quiz Answers icon in Chrome. It usually switches to'
   say 'the new version by itself; if it shows "Restart to finish", click that.'
+  say 'Keep "Developer mode" on at chrome://extensions - Quiz Answers only runs'
+  say 'while it is on.'
   pause
   exit 0
 }

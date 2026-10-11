@@ -11,10 +11,24 @@
 # Kept to plain ASCII: Windows PowerShell 5.1 reads a script without a byte
 # order mark as the local code page, and mangles anything else.
 
+# First, and in plain commands only. Where an App Control policy - Smart App
+# Control, or one an organisation sets - has not approved this script, Windows
+# runs it in a restricted mode in which most of what follows fails with an
+# error that explains nothing. Say what is going on instead, and change nothing.
+if ($ExecutionContext.SessionState.LanguageMode -ne 'FullLanguage') {
+  Write-Host 'Windows only lets this updater run in a restricted mode on this PC,'
+  Write-Host 'because Smart App Control (or a policy set by your organisation) has'
+  Write-Host 'not approved it. Nothing was changed.'
+  Write-Host ''
+  Write-Host 'Update Quiz Answers by hand instead: see "Updating by hand" in the'
+  Write-Host 'README at https://github.com/jincemp/Chrome-Exam-Plugin'
+  Write-Host ''
+  $null = Read-Host 'Press Enter to close this window'
+  exit 1
+}
+
 $ErrorActionPreference = 'Stop'
 $ProgressPreference = 'SilentlyContinue'   # the progress bar makes downloads many times slower in 5.1
-# Windows PowerShell 5.1 can default to TLS 1.0/1.1, which GitHub refuses.
-[Net.ServicePointManager]::SecurityProtocol = [Net.ServicePointManager]::SecurityProtocol -bor [Net.SecurityProtocolType]::Tls12
 
 $ZipUrl = if ($env:QUIZ_ANSWERS_ZIP_URL) { $env:QUIZ_ANSWERS_ZIP_URL } else { 'https://github.com/jincemp/Chrome-Exam-Plugin/archive/refs/heads/main.zip' }
 $AppName = 'Quiz Answers'
@@ -34,7 +48,7 @@ function Pause-ForReader {
   # Only when a person is at the window - never when run by a test.
   if (-not [Console]::IsInputRedirected) {
     Write-Host ''
-    [void](Read-Host 'Press Enter to close this window')
+    try { [void](Read-Host 'Press Enter to close this window') } catch { }
   }
 }
 
@@ -71,22 +85,34 @@ function Remove-Scratch {
 function Stop-WithFailure([string]$why) {
   Write-Host ''
   Write-Host "Update failed: $why"
-  Write-Host 'Nothing was changed - Quiz Answers is exactly as it was.'
+  if ($script:Swapped.Count -gt 0) {
+    # Undo-Swaps could not put everything back, and the backup holds the only
+    # copy of what is missing. Keep it: the next run restores from it first.
+    $script:Backup = $null
+    Write-Host 'Some of the old files could not be put back yet. They are safe in the'
+    Write-Host 'hidden ".update-old" folder inside Quiz Answers. Double-click'
+    Write-Host '"Update Quiz Answers" again to finish.'
+  } else {
+    Write-Host 'Nothing was changed - Quiz Answers is exactly as it was.'
+  }
   Remove-Scratch
   Pause-ForReader
   exit 1
 }
 
-# Undoes every swap so far, newest first.
+# Undoes every swap so far, newest first. An entry that cannot be put back
+# stays listed, which tells Stop-WithFailure to keep the backup.
 function Undo-Swaps {
   for ($i = $script:Swapped.Count - 1; $i -ge 0; $i--) {
     $n = $script:Swapped[$i]
-    $target = Join-Path $script:Dir $n
-    if (Test-Path -LiteralPath $target) { Remove-Item -LiteralPath $target -Recurse -Force }
-    $saved = Join-Path $script:Backup $n
-    if (Test-Path -LiteralPath $saved) { Move-Item -LiteralPath $saved -Destination $target }
+    try {
+      $target = Join-Path $script:Dir $n
+      if (Test-Path -LiteralPath $target) { Remove-Item -LiteralPath $target -Recurse -Force }
+      $saved = Join-Path $script:Backup $n
+      if (Test-Path -LiteralPath $saved) { Move-Item -LiteralPath $saved -Destination $target }
+      $script:Swapped.RemoveAt($i)
+    } catch { }
   }
-  $script:Swapped.Clear()
 }
 
 function Move-Into-Place([string]$n) {
@@ -98,6 +124,9 @@ function Move-Into-Place([string]$n) {
   $target = Join-Path $script:Dir $n
   if (Test-Path -LiteralPath $target) { Move-Item -LiteralPath $target -Destination (Join-Path $script:Backup $n) }
   [void]$script:Swapped.Add($n)
+  if ($env:QUIZ_ANSWERS_QUIT_AFTER -and $script:Count -ge [int]$env:QUIZ_ANSWERS_QUIT_AFTER) {
+    Stop-Process -Id $PID -Force # test hook only: what closing the window right here does
+  }
   Move-Item -LiteralPath (Join-Path $script:Src $n) -Destination $target
   $script:Count++
 }
@@ -111,6 +140,14 @@ function Restore-InterruptedRun {
     $target = Join-Path $script:Dir $item.Name
     if (-not (Test-Path -LiteralPath $target)) { Move-Item -LiteralPath $item.FullName -Destination $target }
   }
+}
+
+# Anything not handled below still gets explained, in a window that stays open
+# long enough to read it. Without this, the window just closes. A trap covers
+# the whole script but a function exists only once its definition has run, so
+# nothing above this point may fail.
+trap {
+  Stop-WithFailure "something unexpected went wrong: $($_.Exception.Message)"
 }
 
 $script:Dir = (Resolve-Path -LiteralPath (Join-Path $PSScriptRoot '..')).ProviderPath
@@ -128,6 +165,14 @@ if (Test-Path -LiteralPath (Join-Path $script:Dir '.git')) {
   exit 1
 }
 
+# Files unzipped from a download carry Windows' "came from the internet" mark,
+# which is why the first double-click asked for permission. An update swaps in
+# unmarked copies, but when there is nothing to update these two would keep the
+# mark and ask again next time. (Not available off Windows; nothing to do there.)
+foreach ($f in @((Join-Path $script:Dir 'Update Quiz Answers.bat'), $PSCommandPath)) {
+  try { Unblock-File -LiteralPath $f -ErrorAction SilentlyContinue } catch { }
+}
+
 Restore-InterruptedRun
 $script:Staging = Join-Path $script:Dir '.update-new'
 $script:Backup = Join-Path $script:Dir '.update-old'
@@ -135,6 +180,9 @@ $script:Backup = Join-Path $script:Dir '.update-old'
 $current = (Read-Manifest $script:Dir).version
 Write-Host "$AppName $current"
 Write-Host 'Checking for a newer version...'
+
+# Windows PowerShell 5.1 can default to TLS 1.0/1.1, which GitHub refuses.
+[Net.ServicePointManager]::SecurityProtocol = [Net.ServicePointManager]::SecurityProtocol -bor [Net.SecurityProtocolType]::Tls12
 
 try {
   $script:Work = Join-Path ([IO.Path]::GetTempPath()) ('quiz-answers-update-' + [Guid]::NewGuid().ToString('N'))
@@ -199,5 +247,7 @@ Write-Host 'folder stayed exactly where it was.'
 Write-Host ''
 Write-Host 'Last step: click the Quiz Answers icon in Chrome. It usually switches to'
 Write-Host 'the new version by itself; if it shows "Restart to finish", click that.'
+Write-Host 'Keep "Developer mode" on at chrome://extensions - Quiz Answers only runs'
+Write-Host 'while it is on.'
 Pause-ForReader
 exit 0

@@ -1,5 +1,6 @@
 /*
- * Tests for updater/update.sh, the script behind "Update Quiz Answers.command".
+ * Tests for the updaters: updater/update.sh, behind "Update Quiz Answers.command"
+ * on a Mac, and updater/update.ps1, behind "Update Quiz Answers.bat" on Windows.
  *
  * Each case builds a throwaway "installed" copy of the extension, serves a
  * "latest" GitHub-style ZIP from a local server, runs the real script against
@@ -124,7 +125,9 @@ function snapshot(dir) {
 }
 
 let served = { status: 200, body: Buffer.alloc(0) };
+let downloads = 0;
 const server = http.createServer((req, res) => {
+  downloads++;
   res.writeHead(served.status, { 'content-type': 'application/zip' }).end(served.body);
 });
 await new Promise((r) => server.listen(0, '127.0.0.1', r));
@@ -135,9 +138,9 @@ const ZIP_URL = `http://127.0.0.1:${server.address().port}/main.zip`;
  * Asynchronous on purpose: the ZIP is served from this same process, and a
  * spawnSync would block the event loop so the server could never answer curl.
  */
-function runUpdater(ext, env = {}) {
+function runUpdater(ext, env = {}, cmd = engine.cmd) {
   return new Promise((resolve) => {
-    const [bin, args] = engine.cmd(path.join(ext, 'updater', engine.script));
+    const [bin, args] = cmd(path.join(ext, 'updater', engine.script));
     const child = spawn(bin, args, {
       env: { ...process.env, QUIZ_ANSWERS_ZIP_URL: ZIP_URL, ...env },
       stdio: ['ignore', 'pipe', 'pipe'],
@@ -343,6 +346,56 @@ await test('a run cut off mid-swap is repaired by the next run', async () => {
   assert.ok(existsSync(path.join(ext, 'popup', 'popup.js')), 'the moved-aside folder must be put back, not deleted');
   noLeftovers(ext);
 });
+
+await test('closing the window mid-swap loses nothing', async () => {
+  // The worst moment: one old entry moved aside into the backup, its
+  // replacement not yet in. On a Mac, closing Terminal makes bash run its
+  // cleanup, which once deleted that backup - the only copy left.
+  const ext = installed('1.7.0');
+  const top = readdirSync(ext).sort();
+  served = { status: 200, body: latestZip('9.9.9') };
+  const quit = await runUpdater(ext, { QUIZ_ANSWERS_QUIT_AFTER: '2' });
+  assert.notEqual(quit.status, 0, `the hook should have ended the run:\n${quit.out}`);
+  const aside = readdirSync(path.join(ext, '.update-old'));
+  assert.equal(aside.length, 3, `expected three entries in the backup, found: ${aside.join(', ')}`);
+  assert.ok(top.some((n) => !existsSync(path.join(ext, n))), 'the hook should have left an entry moved aside');
+
+  // Offline next time: the folder is still made whole again.
+  served = { status: 404, body: Buffer.from('nope') };
+  assert.equal((await runUpdater(ext)).status, 1);
+  assert.deepEqual(readdirSync(ext).filter((n) => !n.startsWith('.update-')).sort(), top);
+  assert.equal(versionIn(ext), '1.7.0');
+
+  // And online, it finishes the update.
+  served = { status: 200, body: latestZip('9.9.9') };
+  const { status, out } = await runUpdater(ext);
+  assert.equal(status, 0, out);
+  assert.equal(versionIn(ext), '9.9.9');
+  assert.equal(readFileSync(path.join(ext, 'my notes.txt'), 'utf8'), 'mine\n');
+  noLeftovers(ext);
+});
+
+if (engine.label === 'windows') {
+  await test('a PC that only allows restricted PowerShell gets an explanation, and no change', async () => {
+    // Smart App Control and other App Control policies run unapproved scripts
+    // in ConstrainedLanguage mode, where most of the script would fail with an
+    // error that explains nothing. Here that mode is switched on by hand.
+    const ext = installed('1.7.0');
+    served = { status: 200, body: latestZip('9.9.9') };
+    const before = snapshot(ext);
+    const hits = downloads;
+    const restricted = (f) => [pwsh, ['-NoProfile', '-Command',
+      `$ExecutionContext.SessionState.LanguageMode = 'ConstrainedLanguage'; & '${f.replace(/'/g, "''")}'; exit $LASTEXITCODE`]];
+    const { status, out } = await runUpdater(ext, {}, restricted);
+    assert.equal(status, 1, out);
+    assert.match(out, /Smart App Control/);
+    assert.match(out, /Nothing was changed/);
+    assert.doesNotMatch(out, /Exception|Cannot invoke|language mode\./i, `a raw PowerShell error leaked out:\n${out}`);
+    assert.equal(downloads, hits, 'it must stop before downloading anything');
+    assert.deepEqual(snapshot(ext), before);
+    noLeftovers(ext);
+  });
+}
 }
 
 for (const e of ENGINES) {

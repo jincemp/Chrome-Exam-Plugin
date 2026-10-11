@@ -149,22 +149,29 @@ icon and it will tell you so, with an **Open settings** button.
 Follow [Get an OpenAI API key](#get-an-openai-api-key) below, then come back and
 [use it](#use-it).
 
-### A warning Chrome will show you
+### Leave Developer mode on
 
-Every so often — usually after a restart — Chrome pops up a bubble saying
-**"Disable developer mode extensions"** or asking whether to keep them.
+Quiz Answers only runs while **Developer mode** is on. If it is ever switched
+off, Chrome turns the extension off straight away, and its card on
+`chrome://extensions` says *"Turn on developer mode to use this extension, which
+can't be reviewed by the Chrome Web Store."*
 
-**Keep them / dismiss it.** Chrome shows this for *any* extension installed from
-a folder rather than the Web Store. It is not a warning about this extension
-specifically, and nothing is wrong. If you click the button that disables them,
-Quiz Answers stops working until you go back to `chrome://extensions` and switch
-it on again.
+Nothing is lost when that happens. Switch Developer mode back on and the
+extension comes back by itself, with your key and settings.
+
+If you use more than one Chrome profile, Developer mode is set per profile. It
+needs to be on in the profile where you installed Quiz Answers.
 
 <h3 id="installing-on-windows">Installing on Windows</h3>
 
-Same process, three differences:
+Same process, four differences:
 
-- **Unzipping:** right-click the downloaded `.zip` → **Extract All…** →
+- **Before unzipping:** right-click the downloaded `.zip` → **Properties**. At
+  the bottom of the **General** tab, next to *"This file came from another
+  computer…"*, tick **Unblock**, then click **OK**. This stops Windows asking
+  for permission later, the first time you run the updater. If there is no
+  Unblock box, there is nothing to do.
+- **Unzipping:** right-click the `.zip` → **Extract All…** →
   **Extract**. Windows often produces a folder inside a folder here, so the
   `manifest.json` check at the end of Step 2 matters more than it does on a Mac.
 - **Where to put it:** anywhere permanent, e.g.
@@ -311,8 +318,9 @@ the internet, so macOS wants you to confirm it once. After that it just runs.
   Trash*. Then open the Apple menu → **System Settings** → **Privacy &
   Security**, scroll down to **Security**, and click **Open Anyway** next to the
   message about "Update Quiz Answers.command". Confirm with your password or
-  Touch ID. That button only appears for about an hour after the warning; if
-  it is not there, double-click the file again first.
+  Touch ID. If your Mac account is not an administrator, an administrator has
+  to type their password here. That button only appears for about an hour after
+  the warning; if it is not there, double-click the file again first.
 - **macOS 14 Sonoma or older**: right-click (or Control-click) the file, choose
   **Open**, then click **Open** again.
 - If a box asks whether **"Terminal" would like to access files in your
@@ -333,11 +341,35 @@ block pasted commands. After one successful run the double-click works again.
 
 ### On Windows
 
-1. Open the extension's folder and double-click **Update Quiz Answers** (the
-   one marked *Windows Batch File*).
-2. WINDOWS-FIRST-RUN-PLACEHOLDER
-3. A window shows progress and finishes with *"Updated Quiz Answers from …"*.
-   Press Enter to close it. The extension switches over by itself, as on a Mac.
+1. Open the extension's folder and double-click **Update Quiz Answers**. Windows
+   hides the end of file names, so there are two files with that name; the one
+   you want has the type *Windows Batch File*. The other one is for Macs.
+2. A black window shows progress and finishes with *"Updated Quiz Answers from
+   …"*. Press Enter to close it. The extension switches over by itself, as on a
+   Mac.
+
+**The first time only, Windows may stop it**, because it came from the
+internet. If you ticked **Unblock** on the `.zip` before unzipping it (see
+[Installing on Windows](#installing-on-windows)), nothing appears. Otherwise
+you get one of these, depending on the PC:
+
+- **Open File - Security Warning**, *"The publisher could not be verified"*:
+  click **Run**.
+- A blue box, **Windows protected your PC**: click **More info**, then **Run
+  anyway**.
+- A message that the file was **blocked**, with no button to run it anyway
+  (Windows 11 with *Smart App Control* on): close the message, right-click
+  **Update Quiz Answers** → **Properties**, tick **Unblock** at the bottom of
+  the **General** tab, click **OK**, and double-click it again.
+
+After that it runs straight away. Two cases where it cannot run, and you need
+[Updating by hand](#updating-by-hand) instead:
+
+- The window says Windows only lets it run in a **restricted mode**. Smart App
+  Control, or a policy on a work or school PC, allows only approved scripts.
+- The window says **running scripts is disabled**, or flashes and closes before
+  you can read it. The PC's settings, usually set by whoever manages it, block
+  scripts.
 
 ### The first time: getting the updater
 
@@ -636,6 +668,10 @@ refreshed list.
 **"Your OpenAI account is out of credit."** Add credit at
 [platform.openai.com/settings/organization/billing](https://platform.openai.com/settings/organization/billing).
 API credit is separate from a ChatGPT Plus subscription.
+
+**The icon is gone or does nothing, and the card says "Turn on developer
+mode…".** Developer mode was switched off. Switch it back on — see
+[Leave Developer mode on](#leave-developer-mode-on).
 
 **Nothing happens at all.** Open `chrome://extensions`, find Quiz Answers, click
 **service worker** to open its console, and look for errors. After editing any
