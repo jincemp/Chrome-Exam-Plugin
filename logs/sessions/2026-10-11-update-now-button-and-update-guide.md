@@ -118,8 +118,9 @@ in my first version. Each is fixed and covered by a test.
 
 ## What I did not do, and why
 
-- **Not merged.** The owner was asked whether to merge as soon as it is ready,
-  or to look at the guide first, and has not answered.
+- **Merged at the owner's go-ahead**, as `6e44666` (PR #4). Before merging, the
+  PR was mergeable with no conflicts, no review comments, and no CI (the repo
+  has none).
 - **Not run on a real Mac or a real Windows PC.** No such machine is
   available, and the suites run on Linux, with pwsh 7 standing in for Windows
   PowerShell 5.1. These still need one real run:
@@ -133,11 +134,17 @@ in my first version. Each is fixed and covered by a test.
 
 ## What the next session should know
 
-- **Do not send the guide or PDF to anyone before this branch is on `main`.**
-  Until then, part A downloads 1.8.0 and part B cannot switch the button on.
-  After merging, check that
-  https://raw.githubusercontent.com/jincemp/Chrome-Exam-Plugin/main/manifest.json
-  says 1.9.0.
+- **`main` is live with 1.9.0, checked after the merge.**
+  - `main`'s files are exactly the reviewed branch.
+  - The raw `manifest.json` says 1.9.0.
+  - GitHub's Download ZIP holds 1.9.0, the guide, the PDF and the helpers, with
+    the exec bits intact.
+  - The real 1.8.0 updater, run against real GitHub with no test hooks, did what
+    part B now says, on both the Mac script (bash) and the Windows script
+    (pwsh 7). The first run took 1.8.0 to 1.9.0, with no "From now on" line.
+    The second said "You already have the latest version (1.9.0)", added the
+    "From now on…" line, and set up the helper. Neither left anything behind.
+  - The guide and PDF can be sent now.
 - **After the merge, ask the owner for one real run on each OS:** the
   double-click in B, then Update now on the next release. Ask for screenshots of
   any box macOS or Windows shows. A tiny 1.9.1 would give Update now its first
