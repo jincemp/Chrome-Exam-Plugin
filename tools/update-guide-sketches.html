@@ -1,0 +1,501 @@
+<!doctype html>
+<!--
+  Drawings of the screens a browser cannot show - GitHub's download menu,
+  Finder, File Explorer, and the macOS and Windows security prompts - for
+  HOW-TO-UPDATE.md. tools/make-update-guide.mjs photographs each <figure> by
+  its id, and fills the two terminal windows with the updater's real output.
+
+  Deliberately plain: they show the words and the buttons a person will meet,
+  not Apple's or Microsoft's artwork, and each carries an "Example" tag. The
+  wording comes from the platform research in logs/sessions/; where macOS or
+  Windows phrase it slightly differently, the button to press is the same.
+-->
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<title>Update guide sketches</title>
+<style>
+  :root {
+    --ink: #1d1f23; --muted: #5d636b; --line: #d5d8dc; --soft: #f3f4f6;
+    --mark: #e8590c; --no: #b42318; --mac-blue: #2f6fe4; --win-blue: #0f62c1;
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; padding: 24px; background: #fff; color: var(--ink); font: 14px/1.4 Inter, system-ui, sans-serif; }
+  figure { position: relative; margin: 0 0 40px; padding: 18px; width: max-content; background: #fff; }
+  figure::after {
+    content: 'Example'; position: absolute; top: 4px; right: 6px;
+    font: 600 10px/1 Inter, sans-serif; letter-spacing: .06em; text-transform: uppercase;
+    color: #8a9099; background: #eef0f2; padding: 4px 6px; border-radius: 4px;
+  }
+
+  /* What to press, and what never to press. */
+  .hl { outline: 3px solid var(--mark); outline-offset: 3px; position: relative; }
+  .no { outline: 2px dashed var(--no); outline-offset: 3px; position: relative; }
+  .tag {
+    position: absolute; z-index: 5; white-space: nowrap;
+    font: 700 12px/1 Inter, sans-serif; color: #fff; background: var(--mark);
+    padding: 6px 9px; border-radius: 999px; box-shadow: 0 1px 2px rgba(0,0,0,.2);
+  }
+  .tag.no-tag { background: var(--no); }
+  .tag.right { left: calc(100% + 12px); top: 50%; transform: translateY(-50%); }
+  .tag.left { right: calc(100% + 12px); top: 50%; transform: translateY(-50%); }
+  .tag.below { top: calc(100% + 10px); left: 50%; transform: translateX(-50%); }
+  .tag.above { bottom: calc(100% + 10px); left: 50%; transform: translateX(-50%); }
+
+  /* ------------------------------------------------------------- Mac look */
+  .mac-win { width: 560px; border: 1px solid #c9ccd1; border-radius: 11px; overflow: visible; box-shadow: 0 8px 28px rgba(0,0,0,.14); background: #fff; }
+  .mac-bar { height: 38px; display: flex; align-items: center; gap: 8px; padding: 0 14px; background: #ececee; border-bottom: 1px solid #d6d7da; border-radius: 11px 11px 0 0; }
+  .dots { display: flex; gap: 7px; }
+  .dots i { width: 12px; height: 12px; border-radius: 50%; background: #c4c7cc; display: block; }
+  .mac-title { flex: 1; text-align: center; font-weight: 600; font-size: 13px; color: #3b3f45; margin-right: 46px; }
+  .mac-path { font-size: 11.5px; color: var(--muted); padding: 6px 14px; border-top: 1px solid #e3e4e7; background: #f7f7f8; border-radius: 0 0 11px 11px; }
+  .grid { display: grid; grid-template-columns: repeat(5, 1fr); gap: 14px 6px; padding: 18px 14px 20px; }
+  .item { display: flex; flex-direction: column; align-items: center; gap: 6px; text-align: center; font-size: 12px; padding: 4px 2px; border-radius: 6px; }
+  .item.sel { background: #dbe7fb; }
+  .icon { width: 46px; height: 38px; position: relative; }
+  .folder { background: #9ec3ef; border-radius: 4px 4px 5px 5px; }
+  .folder::before { content: ''; position: absolute; left: 0; top: -5px; width: 20px; height: 8px; background: #8bb6ea; border-radius: 3px 3px 0 0; }
+  .file { width: 32px; height: 40px; background: #fff; border: 1.5px solid #b8bdc4; border-radius: 3px; }
+  .file::after { content: attr(data-kind); position: absolute; left: 0; right: 0; bottom: 4px; font: 700 7px/1 Inter, sans-serif; color: #6a7078; text-align: center; letter-spacing: .03em; }
+  .zip { background: repeating-linear-gradient(180deg, #d8dbe0 0 4px, #fff 4px 8px); }
+  .script { width: 40px; height: 32px; background: #2b2d31; border-radius: 5px; border: none; }
+  .script::after { content: '>_'; position: absolute; left: 6px; top: 6px; font: 700 12px/1 'DejaVu Sans Mono', monospace; color: #e6e6e6; }
+
+  .menubar { display: flex; gap: 18px; align-items: center; height: 28px; padding: 0 14px; background: #f6f6f7; border-bottom: 1px solid #dfe0e3; font-size: 13px; width: 560px; border-radius: 8px 8px 0 0; }
+  .menubar b { font-weight: 700; }
+  .menubar .open { background: var(--mac-blue); color: #fff; padding: 3px 8px; border-radius: 4px; }
+  .menu { position: absolute; width: 240px; background: #fbfbfc; border: 1px solid #cfd2d6; border-radius: 8px; box-shadow: 0 10px 30px rgba(0,0,0,.18); padding: 5px; font-size: 13px; z-index: 3; }
+  .menu div { display: flex; justify-content: space-between; padding: 5px 10px; border-radius: 4px; }
+  .menu .dim { color: #a3a8af; }
+  .menu hr { border: 0; border-top: 1px solid #e3e4e7; margin: 4px 6px; }
+
+  .alert { width: 300px; padding: 22px 20px 18px; border-radius: 14px; background: #f4f4f6; border: 1px solid #d3d5d9; box-shadow: 0 12px 34px rgba(0,0,0,.2); text-align: center; }
+  .alert h3 { margin: 12px 0 8px; font-size: 14px; line-height: 1.3; }
+  .alert p { margin: 0 0 16px; font-size: 12px; color: #3b3f45; }
+  .warn-icon { width: 54px; height: 54px; margin: 0 auto; border-radius: 12px; background: #e9eaee; display: grid; place-items: center; font: 800 28px/1 Inter, sans-serif; color: #8a6d00; border: 1px solid #d6d8dc; }
+  .mac-btn { display: block; width: 100%; padding: 7px 10px; margin-top: 8px; border-radius: 7px; border: 1px solid #cfd2d6; background: #fff; font: 600 13px/1.2 Inter, sans-serif; color: var(--ink); }
+  .mac-btn.primary { background: var(--mac-blue); border-color: var(--mac-blue); color: #fff; }
+  .row-btns { display: flex; gap: 10px; justify-content: flex-end; }
+  .row-btns .mac-btn { width: auto; min-width: 86px; margin-top: 0; }
+
+  .settings { width: 640px; display: flex; border: 1px solid #c9ccd1; border-radius: 11px; box-shadow: 0 8px 28px rgba(0,0,0,.14); background: #fff; }
+  .settings aside { width: 190px; padding: 44px 10px 16px; background: #f2f2f4; border-right: 1px solid #dcdde0; border-radius: 11px 0 0 11px; font-size: 13px; }
+  .settings aside div { padding: 6px 10px; border-radius: 6px; }
+  .settings aside .on { background: var(--mac-blue); color: #fff; }
+  .settings main { flex: 1; padding: 18px 22px 22px; }
+  .settings h2 { font-size: 17px; margin: 4px 0 14px; }
+  .settings h4 { font-size: 13px; margin: 0 0 8px; color: var(--muted); }
+  .settings .box { border: 1px solid #e0e2e5; border-radius: 9px; padding: 14px; display: flex; align-items: center; gap: 14px; justify-content: space-between; font-size: 13px; }
+  .settings .faint { height: 10px; background: #eceef1; border-radius: 5px; margin: 0 0 10px; }
+
+  .term { width: 600px; border-radius: 11px; overflow: visible; box-shadow: 0 8px 28px rgba(0,0,0,.18); border: 1px solid #c4c7cc; }
+  .term pre { margin: 0; padding: 14px 16px 18px; min-height: 240px; background: #fff; color: #1d1f23; font: 12.5px/1.5 'DejaVu Sans Mono', monospace; white-space: pre-wrap; border-radius: 0 0 11px 11px; }
+
+  /* --------------------------------------------------------- Windows look */
+  .win { width: 560px; background: #fff; border: 1px solid #aeb4bb; box-shadow: 0 8px 24px rgba(0,0,0,.16); font: 13px/1.4 'Segoe UI', Inter, sans-serif; }
+  .win-bar { height: 34px; display: flex; align-items: center; padding: 0 0 0 12px; background: #f3f3f3; border-bottom: 1px solid #e1e1e1; font-size: 12.5px; }
+  .win-bar .t { flex: 1; }
+  .win-bar .x { width: 46px; text-align: center; color: #444; font-size: 15px; }
+  .win-body { padding: 16px 18px 18px; }
+  .win-btn { display: inline-block; min-width: 84px; padding: 5px 14px; border: 1px solid #b9bec5; background: #fdfdfd; border-radius: 4px; text-align: center; font: 13px/1.3 'Segoe UI', Inter, sans-serif; }
+  .win-btn.primary { background: var(--win-blue); color: #fff; border-color: var(--win-blue); }
+  .win-btns { display: flex; gap: 10px; justify-content: flex-end; margin-top: 16px; }
+  .crumbs { padding: 8px 12px; border-bottom: 1px solid #e6e6e6; font-size: 12.5px; color: #333; background: #fbfbfb; }
+  .list { width: 100%; border-collapse: collapse; font-size: 12.5px; }
+  .list th { text-align: left; font-weight: 400; color: #666; padding: 6px 12px; border-bottom: 1px solid #ececec; }
+  .list td { padding: 6px 12px; }
+  .list tr.sel td { background: #cce4f7; }
+  .list .n { display: inline-flex; align-items: center; gap: 8px; }
+  .ico { width: 18px; height: 15px; display: inline-block; border-radius: 2px; }
+  .ico.fo { background: #f2c55c; }
+  .ico.fi { width: 13px; height: 16px; border: 1.5px solid #9aa1a9; border-radius: 1px 5px 1px 1px; background: linear-gradient(#e3e6ea, #e3e6ea) 2px 4px / 7px 1.5px no-repeat, linear-gradient(#e3e6ea, #e3e6ea) 2px 8px / 7px 1.5px no-repeat, #fff; }
+  .ico.ba { width: 16px; height: 16px; background: #3a3a3a; }
+  .smart { width: 560px; background: #0f5aa8; color: #fff; padding: 26px 28px 22px; font: 14px/1.45 'Segoe UI', Inter, sans-serif; box-shadow: 0 8px 24px rgba(0,0,0,.2); }
+  .smart h2 { font: 300 26px/1.2 'Segoe UI', Inter, sans-serif; margin: 0 0 14px; }
+  .smart .link { text-decoration: underline; }
+  .smart .kv { margin: 12px 0 0; font-size: 13px; }
+  .smart .btns { display: flex; gap: 10px; justify-content: flex-end; margin-top: 24px; }
+  .smart .b { border: 2px solid #fff; padding: 6px 18px; font-size: 13px; }
+  .smart .b.solid { background: #fff; color: #0f5aa8; font-weight: 600; }
+  .console { width: 620px; box-shadow: 0 8px 24px rgba(0,0,0,.2); border: 1px solid #555; }
+  .console .win-bar { background: #fff; }
+  .console pre { margin: 0; padding: 12px 14px 18px; min-height: 240px; background: #0c0c0c; color: #cccccc; font: 12.5px/1.5 'DejaVu Sans Mono', monospace; white-space: pre-wrap; }
+  .ctx { width: 250px; background: #fafafa; border: 1px solid #cfcfcf; box-shadow: 0 8px 22px rgba(0,0,0,.18); padding: 5px; font-size: 13px; border-radius: 8px; }
+  .ctx div { padding: 6px 12px; border-radius: 4px; }
+  .keys { display: inline-flex; gap: 6px; align-items: center; font-size: 12px; color: var(--muted); }
+  kbd { font: 700 12px/1 Inter, sans-serif; color: var(--ink); background: #fff; border: 1px solid #c9ccd1; border-bottom-width: 3px; border-radius: 5px; padding: 4px 7px; }
+  .note { font-size: 12px; color: var(--muted); margin-top: 10px; }
+
+  /* GitHub-ish */
+  .gh { width: 640px; border: 1px solid #d0d7de; border-radius: 8px; font: 14px/1.5 Inter, sans-serif; background: #fff; }
+  .gh-top { padding: 14px 16px; border-bottom: 1px solid #d0d7de; display: flex; align-items: center; gap: 8px; font-size: 16px; }
+  .gh-top .pill { font-size: 11px; border: 1px solid #d0d7de; border-radius: 999px; padding: 1px 8px; color: #57606a; }
+  .gh-tools { padding: 12px 16px; display: flex; gap: 8px; align-items: center; }
+  .gh-btn { border: 1px solid #d0d7de; background: #f6f8fa; border-radius: 6px; padding: 4px 12px; font-size: 13px; font-weight: 600; }
+  .gh-btn.green { background: #1f883d; border-color: #1f883d; color: #fff; }
+  .gh-menu { position: absolute; right: 16px; top: 112px; width: 320px; background: #fff; border: 1px solid #d0d7de; border-radius: 10px; box-shadow: 0 8px 24px rgba(140,149,159,.3); font-size: 13px; z-index: 3; }
+  .gh-menu .tabs { display: flex; border-bottom: 1px solid #d0d7de; }
+  .gh-menu .tabs div { flex: 1; text-align: center; padding: 8px; font-weight: 600; }
+  .gh-menu .tabs .on { border-bottom: 2px solid #fd8c73; }
+  .gh-menu .sec { padding: 12px 14px; }
+  .gh-menu .url { border: 1px solid #d0d7de; border-radius: 6px; padding: 4px 8px; font: 12px 'DejaVu Sans Mono', monospace; color: #57606a; margin-top: 6px; }
+  .gh-menu .dl { padding: 10px 14px; border-top: 1px solid #d0d7de; font-weight: 600; display: flex; gap: 8px; align-items: center; }
+  .gh-files { padding: 0 16px 16px; }
+  .gh-files div { border: 1px solid #d0d7de; border-top: 0; padding: 7px 12px; font-size: 13px; color: #57606a; }
+  .gh-files div:first-child { border-top: 1px solid #d0d7de; border-radius: 6px 6px 0 0; background: #f6f8fa; }
+</style>
+</head>
+<body>
+
+<!-- 2. Download the new version -->
+<figure id="github-download">
+  <div class="gh" style="position: relative; height: 330px;">
+    <div class="gh-top">jincemp / <b>Chrome-Exam-Plugin</b> <span class="pill">Public</span></div>
+    <div class="gh-tools">
+      <span class="gh-btn">main ▾</span>
+      <span style="flex: 1"></span>
+      <span class="gh-btn">Go to file</span>
+      <span class="gh-btn green hl">&lt;&gt; Code ▾<span class="tag above">1. Click</span></span>
+    </div>
+    <div class="gh-files"><div>Latest commit</div><div>icons</div><div>popup</div><div>src</div><div>manifest.json</div></div>
+    <div class="gh-menu">
+      <div class="tabs"><div class="on">Local</div><div>Codespaces</div></div>
+      <div class="sec">Clone<div class="url">https://github.com/jincemp/Chrome-Exam-Plugin.git</div></div>
+      <div class="dl hl">⬇ Download ZIP<span class="tag left">2. Click</span></div>
+    </div>
+  </div>
+</figure>
+
+<!-- 3a. Mac: unzip -->
+<figure id="mac-unzip">
+  <div class="mac-win">
+    <div class="mac-bar"><span class="dots"><i></i><i></i><i></i></span><span class="mac-title">Downloads</span></div>
+    <div class="grid">
+      <div class="item"><span class="icon file zip" data-kind="ZIP"></span>Chrome-Exam-Plugin-main.zip</div>
+      <div class="item sel hl"><span class="icon folder"></span>Chrome-Exam-Plugin-main<span class="tag below">The new version</span></div>
+    </div>
+    <div class="mac-path">Double-click the .zip, and the folder next to it appears.</div>
+  </div>
+</figure>
+
+<!-- 1. Mac: the folder Chrome opened (old version) -->
+<figure id="mac-old-folder">
+  <div class="mac-win">
+    <div class="mac-bar"><span class="dots"><i></i><i></i><i></i></span><span class="mac-title">Chrome-Exam-Plugin-main</span></div>
+    <div class="grid" data-tree="old" data-os="mac"></div>
+    <div class="mac-path">Documents ▸ Chrome Extensions ▸ Chrome-Exam-Plugin-main &nbsp;·&nbsp; the folder Chrome uses</div>
+  </div>
+</figure>
+
+<!-- 4a. Mac: select everything in the NEW folder and copy -->
+<figure id="mac-copy">
+  <div style="position: relative; padding-bottom: 6px;">
+    <div class="menubar"><b>Finder</b><span>File</span><span class="open">Edit</span><span>View</span><span>Go</span><span>Window</span></div>
+    <div class="menu" style="left: 104px; top: 30px;">
+      <div class="dim"><span>Undo</span><span>⌘Z</span></div>
+      <hr />
+      <div><span>Cut</span><span>⌘X</span></div>
+      <div class="hl"><span>Copy <span data-count="new"></span> Items</span><span>⌘C</span><span class="tag right">2. Copy</span></div>
+      <div class="dim"><span>Paste</span><span>⌘V</span></div>
+      <div class="hl" style="margin-top: 8px;"><span>Select All</span><span>⌘A</span><span class="tag right">1. Select All</span></div>
+    </div>
+    <div class="mac-win" style="border-radius: 0 0 11px 11px;">
+      <div class="mac-bar" style="border-radius: 0;"><span class="dots"><i></i><i></i><i></i></span><span class="mac-title">Chrome-Exam-Plugin-main</span></div>
+      <div class="grid" data-tree="new" data-os="mac" data-select="all"></div>
+      <div class="mac-path">Downloads ▸ Chrome-Exam-Plugin-main &nbsp;·&nbsp; the NEW folder</div>
+    </div>
+  </div>
+</figure>
+
+<!-- 4b. Mac: paste into the OLD folder -->
+<figure id="mac-paste">
+  <div style="position: relative; padding-bottom: 6px;">
+    <div class="menubar"><b>Finder</b><span>File</span><span class="open">Edit</span><span>View</span><span>Go</span><span>Window</span></div>
+    <div class="menu" style="left: 104px; top: 30px;">
+      <div class="dim"><span>Undo</span><span>⌘Z</span></div>
+      <hr />
+      <div class="dim"><span>Cut</span><span>⌘X</span></div>
+      <div class="dim"><span>Copy</span><span>⌘C</span></div>
+      <div class="hl"><span>Paste <span data-count="new"></span> Items</span><span>⌘V</span><span class="tag right">Paste</span></div>
+      <div><span>Select All</span><span>⌘A</span></div>
+    </div>
+    <div class="mac-win" style="border-radius: 0 0 11px 11px;">
+      <div class="mac-bar" style="border-radius: 0;"><span class="dots"><i></i><i></i><i></i></span><span class="mac-title">Chrome-Exam-Plugin-main</span></div>
+      <div class="grid" data-tree="old" data-os="mac"></div>
+      <div class="mac-path">Documents ▸ Chrome Extensions ▸ Chrome-Exam-Plugin-main &nbsp;·&nbsp; the OLD folder, from step 1</div>
+    </div>
+  </div>
+</figure>
+
+<!-- 4c. Mac: the replace question -->
+<figure id="mac-replace">
+  <div class="alert" style="width: 420px; text-align: left;">
+    <div style="display: flex; gap: 14px;">
+      <div class="warn-icon" style="flex: none; margin: 0;">!</div>
+      <div>
+        <h3 style="margin-top: 2px;">An item named “icons” already exists in this location. Do you want to replace it with the one you’re copying?</h3>
+        <label class="hl" style="display: inline-flex; gap: 6px; align-items: center; font-size: 12px; margin: 4px 0 18px;"><input type="checkbox" checked /> Apply to All<span class="tag right">1. Tick this</span></label>
+      </div>
+    </div>
+    <div class="row-btns">
+      <span class="mac-btn no">Keep Both<span class="tag no-tag below">Never this</span></span>
+      <span class="mac-btn">Stop</span>
+      <span class="mac-btn primary hl">Replace<span class="tag below">2. Replace</span></span>
+    </div>
+    <div style="height: 34px;"></div>
+  </div>
+</figure>
+
+<!-- B2. Mac: the updater in the folder -->
+<figure id="mac-update-file">
+  <div class="mac-win">
+    <div class="mac-bar"><span class="dots"><i></i><i></i><i></i></span><span class="mac-title">Chrome-Exam-Plugin-main</span></div>
+    <div class="grid" data-tree="new" data-os="mac" data-mark="Update Quiz Answers.command" data-avoid="Update Quiz Answers.bat"></div>
+    <div style="height: 22px;"></div>
+  </div>
+</figure>
+
+<!-- B3. Mac, first time: blocked -->
+<figure id="mac-not-opened">
+  <div class="alert">
+    <div class="warn-icon">!</div>
+    <h3>“Update Quiz Answers.command” Not Opened</h3>
+    <p>Apple could not verify “Update Quiz Answers.command” is free of malware that may harm your Mac or compromise your privacy.</p>
+    <span class="mac-btn primary hl">Done<span class="tag right">Click Done</span></span>
+    <span class="mac-btn no">Move to Trash<span class="tag no-tag right">Never this</span></span>
+  </div>
+</figure>
+
+<!-- B3. Mac, first time: Open Anyway in System Settings -->
+<figure id="mac-open-anyway">
+  <div class="settings">
+    <aside><div>Wi-Fi</div><div>Bluetooth</div><div>Network</div><div>…</div><div class="on">Privacy &amp; Security</div><div>Desktop &amp; Dock</div></aside>
+    <main>
+      <h2>Privacy &amp; Security</h2>
+      <div class="faint" style="width: 70%"></div><div class="faint" style="width: 55%"></div>
+      <h4 style="margin-top: 18px;">Security</h4>
+      <div class="box">
+        <span>“Update Quiz Answers.command” was blocked to protect your Mac.</span>
+        <span class="mac-btn hl" style="width: auto; margin: 0; white-space: nowrap;">Open Anyway<span class="tag below">Click</span></span>
+      </div>
+      <div style="height: 34px;"></div>
+    </main>
+  </div>
+</figure>
+
+<!-- B3. Mac, first time: the confirmation after Open Anyway -->
+<figure id="mac-open-confirm">
+  <div class="alert">
+    <div class="warn-icon">!</div>
+    <h3>Open “Update Quiz Answers.command”?</h3>
+    <p>Apple is not able to verify that it is free from malware that could harm your Mac or compromise your privacy.</p>
+    <span class="mac-btn primary hl">Open Anyway<span class="tag right">Click</span></span>
+    <span class="mac-btn">Done</span>
+    <p style="margin: 14px 0 0; font-size: 11.5px; color: var(--muted);">Then type your Mac password (or use Touch ID).</p>
+  </div>
+</figure>
+
+<!-- B3. Mac, first time: Terminal asks for the folder -->
+<figure id="mac-folder-access">
+  <div class="alert">
+    <div class="warn-icon" style="color: #3b3f45;">&gt;_</div>
+    <h3>“Terminal” would like to access files in your Documents folder.</h3>
+    <p>Keeping app data separate makes it easier to manage your privacy and security.</p>
+    <div class="row-btns" style="justify-content: center;">
+      <span class="mac-btn no">Don’t Allow</span>
+      <span class="mac-btn primary hl">Allow<span class="tag right">Click</span></span>
+    </div>
+  </div>
+</figure>
+
+<!-- B4. Mac: the updater's window when it has finished -->
+<figure id="mac-terminal">
+  <div class="term">
+    <div class="mac-bar"><span class="dots"><i></i><i></i><i></i></span><span class="mac-title">Terminal</span></div>
+    <pre data-output="mac"></pre>
+  </div>
+</figure>
+
+<!-- A3. Windows: unblock the ZIP before extracting -->
+<figure id="win-unblock">
+  <div class="win" style="width: 420px;">
+    <div class="win-bar"><span class="t">Chrome-Exam-Plugin-main.zip Properties</span><span class="x">✕</span></div>
+    <div class="win-body">
+      <div style="display: flex; gap: 16px; font-size: 12.5px; border-bottom: 1px solid #ddd; padding-bottom: 6px; margin-bottom: 12px;"><b>General</b><span>Security</span><span>Details</span></div>
+      <div style="font-size: 12.5px; color: #333; line-height: 2;">Type of file: Compressed (zipped) Folder (.zip)<br />Location: C:\Users\you\Downloads</div>
+      <div style="display: flex; gap: 14px; margin-top: 14px; font-size: 12.5px;">
+        <span style="flex: none;">Security:</span>
+        <span>This file came from another computer and might be blocked to help protect this computer.</span>
+        <label class="hl" style="flex: none; display: inline-flex; gap: 5px; align-items: center; align-self: center;"><input type="checkbox" checked /> Unblock<span class="tag below">1. Tick</span></label>
+      </div>
+      <div class="win-btns" style="margin-top: 40px;"><span class="win-btn primary hl">OK<span class="tag left">2. OK</span></span><span class="win-btn">Cancel</span><span class="win-btn">Apply</span></div>
+    </div>
+  </div>
+</figure>
+
+<!-- A3. Windows: Extract All -->
+<figure id="win-extract">
+  <div style="display: flex; gap: 30px; align-items: flex-start;">
+    <div class="ctx">
+      <div style="color: #777;">Chrome-Exam-Plugin-main.zip</div>
+      <div>Open</div>
+      <div>Open in new window</div>
+      <div class="hl">Extract All…<span class="tag right">1. Click</span></div>
+      <div>Pin to Start</div>
+      <div>Properties</div>
+    </div>
+    <div class="win" style="width: 380px; margin-left: 70px;">
+      <div class="win-bar"><span class="t">Extract Compressed (Zipped) Folders</span><span class="x">✕</span></div>
+      <div class="win-body">
+        <div style="font-size: 12.5px;">Files will be extracted to this folder:</div>
+        <div style="border: 1px solid #bbb; padding: 4px 6px; margin-top: 6px; font-size: 12px;">C:\Users\you\Downloads\Chrome-Exam-Plugin-main</div>
+        <div class="win-btns" style="margin-top: 26px;"><span class="win-btn primary hl">Extract<span class="tag below">2. Extract</span></span><span class="win-btn">Cancel</span></div>
+        <div style="height: 26px;"></div>
+      </div>
+    </div>
+  </div>
+</figure>
+
+<!-- A1. Windows: the folder Chrome opened (old version) -->
+<figure id="win-old-folder">
+  <div class="win">
+    <div class="win-bar"><span class="t">Chrome-Exam-Plugin-main</span><span class="x">✕</span></div>
+    <div class="crumbs">Documents › Chrome Extensions › Chrome-Exam-Plugin-main &nbsp;·&nbsp; the folder Chrome uses</div>
+    <table class="list" data-tree="old" data-os="win"></table>
+  </div>
+</figure>
+
+<!-- A4. Windows: copy everything from the NEW folder -->
+<figure id="win-copy">
+  <div class="win">
+    <div class="win-bar"><span class="t">Chrome-Exam-Plugin-main</span><span class="x">✕</span></div>
+    <div class="crumbs">Downloads › Chrome-Exam-Plugin-main › Chrome-Exam-Plugin-main &nbsp;·&nbsp; the NEW folder</div>
+    <table class="list" data-tree="new" data-os="win" data-select="all"></table>
+    <div style="padding: 14px 12px 12px; display: flex; gap: 40px; border-top: 1px solid #eee; margin-top: 22px;">
+      <span class="keys hl">Select all: <kbd>Ctrl</kbd>+<kbd>A</kbd><span class="tag above">1.</span></span>
+      <span class="keys hl">Copy: <kbd>Ctrl</kbd>+<kbd>C</kbd><span class="tag above">2.</span></span>
+    </div>
+  </div>
+</figure>
+
+<!-- A4. Windows: paste into the OLD folder, and replace -->
+<figure id="win-replace">
+  <div class="win" style="width: 470px;">
+    <div class="win-bar"><span class="t">Replace or Skip Files</span><span class="x">✕</span></div>
+    <div class="win-body">
+      <div style="font-size: 12.5px; color: #444;">Copying <span data-count="new"></span> items from <b>Chrome-Exam-Plugin-main</b> to <b>Chrome-Exam-Plugin-main</b></div>
+      <div style="font-size: 16px; margin: 12px 0 14px;">The destination has <span data-count="same"></span> files with the same names</div>
+      <div class="hl" style="padding: 8px 10px;">✓ &nbsp;Replace the files in the destination<span class="tag right">Click</span></div>
+      <div style="padding: 8px 10px; color: #444;">↷ &nbsp;Skip these files</div>
+      <div style="padding: 8px 10px; color: #444;">⧉ &nbsp;Let me decide for each file</div>
+    </div>
+  </div>
+</figure>
+
+<!-- B2. Windows: which of the two files -->
+<figure id="win-update-file">
+  <div class="win">
+    <div class="win-bar"><span class="t">Chrome-Exam-Plugin-main</span><span class="x">✕</span></div>
+    <div class="crumbs">Documents › Chrome Extensions › Chrome-Exam-Plugin-main</div>
+    <table class="list" data-tree="new" data-os="win" data-mark="Update Quiz Answers.bat" data-avoid="Update Quiz Answers.command"></table>
+    <div style="height: 10px;"></div>
+  </div>
+</figure>
+
+<!-- B3. Windows, first time: the older security warning -->
+<figure id="win-security-warning">
+  <div class="win" style="width: 470px;">
+    <div class="win-bar"><span class="t">Open File - Security Warning</span><span class="x">✕</span></div>
+    <div class="win-body">
+      <div style="font-size: 14px; margin-bottom: 12px;">The publisher could not be verified. Are you sure you want to run this software?</div>
+      <div style="font-size: 12.5px; line-height: 1.9; color: #333;">
+        Name: ...\Chrome-Exam-Plugin-main\Update Quiz Answers.bat<br />
+        Publisher: <b>Unknown Publisher</b><br />
+        Type: Windows Batch File
+      </div>
+      <div class="win-btns"><span class="win-btn hl">Run<span class="tag left">Click</span></span><span class="win-btn">Cancel</span></div>
+    </div>
+  </div>
+</figure>
+
+<!-- B3. Windows, first time: the blue box -->
+<figure id="win-smartscreen">
+  <div class="smart">
+    <h2>Windows protected your PC</h2>
+    <div>Microsoft Defender SmartScreen prevented an unrecognized app from starting. Running this app might put your PC at risk.</div>
+    <div class="kv"><span class="link hl">More info<span class="tag right">1. Click "More info"</span></span></div>
+    <div class="kv">App: Update Quiz Answers.bat<br />Publisher: Unknown publisher</div>
+    <div class="btns"><span class="b solid hl">Run anyway<span class="tag below">2. Then this</span></span><span class="b">Don’t run</span></div>
+    <div style="height: 26px;"></div>
+  </div>
+</figure>
+
+<!-- B4. Windows: the updater's window when it has finished -->
+<figure id="win-console">
+  <div class="console">
+    <div class="win-bar"><span class="t">C:\WINDOWS\system32\cmd.exe</span><span class="x">✕</span></div>
+    <pre data-output="windows"></pre>
+  </div>
+</figure>
+
+<script>
+  // How Finder and File Explorer show each top-level entry. Explorer hides the
+  // ending only for file types Windows knows: .bat yes, .command no.
+  const WIN_TYPES = { bat: 'Windows Batch File', command: 'COMMAND File', json: 'JSON File', md: 'MD File' };
+  const ext = (n) => (n.includes('.') ? n.split('.').pop().toLowerCase() : '');
+
+  function macItem(e, opts) {
+    const d = document.createElement('div');
+    d.className = 'item';
+    const icon = document.createElement('span');
+    const x = ext(e.name);
+    icon.className = e.dir ? 'icon folder' : x === 'command' ? 'icon script' : 'icon file';
+    if (!e.dir && x !== 'command') icon.dataset.kind = x.toUpperCase();
+    d.append(icon, document.createTextNode(e.name));
+    if (opts.select) d.classList.add('sel');
+    return d;
+  }
+
+  function winRow(e, opts) {
+    const tr = document.createElement('tr');
+    const x = ext(e.name);
+    const shown = !e.dir && x === 'bat' ? e.name.slice(0, -4) : e.name;
+    tr.innerHTML = '<td><span class="n"><i class="ico ' + (e.dir ? 'fo' : x === 'bat' ? 'ba' : 'fi') + '"></i></span></td><td></td>';
+    tr.querySelector('.n').append(document.createTextNode(shown));
+    tr.children[1].textContent = e.dir ? 'File folder' : (WIN_TYPES[x] || x.toUpperCase() + ' File');
+    if (opts.select) tr.classList.add('sel');
+    return tr;
+  }
+
+  function tag(text, cls) {
+    const t = document.createElement('span');
+    t.className = 'tag ' + cls;
+    t.textContent = text;
+    return t;
+  }
+
+  window.renderSketches = ({ trees, counts }) => {
+    for (const el of document.querySelectorAll('[data-count]')) el.textContent = counts[el.dataset.count];
+    for (const host of document.querySelectorAll('[data-tree]')) {
+      const win = host.dataset.os === 'win';
+      // Finder's icon view mixes folders and files by name; Explorer puts folders first.
+      const entries = win ? [...trees[host.dataset.tree]].sort((a, b) => (b.dir - a.dir)) : trees[host.dataset.tree];
+      const opts = { select: host.dataset.select === 'all' };
+      if (win) host.innerHTML = '<tr><th>Name</th><th>Type</th></tr>';
+      for (const e of entries) {
+        const node = win ? winRow(e, opts) : macItem(e, opts);
+        if (e.name === host.dataset.mark) {
+          node.classList.add('hl', 'sel');
+          (win ? node.children[1] : node).append(tag(win ? 'Double-click this one' : 'Double-click', win ? 'right' : 'below'));
+        }
+        if (e.name === host.dataset.avoid) {
+          node.classList.add('no');
+          (win ? node.children[1] : node).append(tag(win ? 'Mac only' : 'Windows only', 'no-tag ' + (win ? 'right' : 'below')));
+        }
+        host.append(node);
+      }
+    }
+  };
+</script>
+</body>
+</html>

@@ -23,6 +23,10 @@ still gets answered.
    without this.
 3. [Use it](#use-it) — the part you actually came for.
 
+**Sending someone instructions?** [HOW-TO-UPDATE.md](HOW-TO-UPDATE.md) is the
+update on its own, with a picture of every screen — send them the link, or the
+[PDF of it](docs/how-to-update/How-to-update-Quiz-Answers.pdf).
+
 **Already installed?** [Updating to a new version](#updating-to-a-new-version)
 is the section you want — from 1.8.0 it is a double-click — and [When an answer is wrong](#when-an-answer-is-wrong)
 is the one to read if the answers are not what you expected.
@@ -356,9 +360,9 @@ block pasted commands. After one successful run the double-click works again.
 
 ### On Windows
 
-1. Open the extension's folder and double-click **Update Quiz Answers**. Windows
-   hides the end of file names, so there are two files with that name; the one
-   you want has the type *Windows Batch File*. The other one is for Macs.
+1. Open the extension's folder and double-click **Update Quiz Answers** — the
+   one whose type is *Windows Batch File*. Windows hides the `.bat` on the end
+   of its name; the other file, `Update Quiz Answers.command`, is for Macs.
 2. A black window shows progress and finishes with *"Updated Quiz Answers from
    …"*. Press Enter to close it.
 3. Click the Quiz Answers icon, and if the button says **Restart to finish the
