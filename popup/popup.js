@@ -1,6 +1,6 @@
 import { formatAll, sortAnswers } from '../src/format.js';
 import { getSettings, jobKey, pageKey } from '../src/storage.js';
-import { answersHeld, checkForUpdate, pendingRestart, requestRestart } from '../src/update.js';
+import { answersHeld, checkForUpdate, helperStatus, pendingRestart, requestRestart, updateNow, withoutHelper } from '../src/update.js';
 
 const $ = (id) => document.getElementById(id);
 
@@ -200,11 +200,18 @@ async function send(message) {
 async function restart() {
   const res = await requestRestart();
   // On success this page closes with the restart, so only a refusal is left to show.
-  if (res?.busy) {
-    $('update-text').textContent = 'Answers are still being worked on. Restart once they are done.';
-    $('update-action').hidden = true;
-    $('update').hidden = false;
-  }
+  if (res?.ok) return;
+  const action = $('update-action');
+  $('update-text').textContent = res?.busy ? 'Answers are still being worked on. Restart once they are done.'
+    : res?.copying ? 'The new files are still being copied into the folder. Try again in a moment.'
+      : res?.settingsOpen ? 'Close the Quiz Answers settings page first: restarting would close it, and anything not saved there.'
+        : 'Could not restart just now. Try again in a moment.';
+  // "Try again" is this same button, now and then.
+  action.textContent = 'Restart to finish';
+  action.onclick = restart;
+  action.disabled = false;
+  action.hidden = Boolean(res?.busy);
+  $('update').hidden = false;
 }
 
 async function start(force) {
@@ -293,6 +300,7 @@ chrome.storage.onChanged.addListener((changes, area) => {
 async function renderUpdate() {
   const text = $('update-text');
   const action = $('update-action');
+  action.hidden = false; // runUpdate hides it while it works
 
   const installed = await pendingRestart();
   if (installed) {
@@ -317,12 +325,79 @@ async function renderUpdate() {
   }
 
   const { available, latest } = await checkForUpdate();
-  if (!available) return;
-  text.textContent = `Version ${latest} is out. To get it, double-click "Update Quiz Answers" in the extension's folder.`;
-  action.textContent = 'Where is the folder?';
-  // The details page for an unpacked extension shows the folder it loads from.
-  action.onclick = () => chrome.tabs.create({ url: `chrome://extensions/?id=${chrome.runtime.id}` });
+  if (!available) return renderHelperHint();
+  const helper = await helperStatus();
+  if (helper === 'ready') {
+    chrome.storage.local.remove('helperHint').catch(() => {});
+    text.textContent = `Version ${latest} is out.`;
+    action.textContent = 'Update now';
+    action.onclick = () => runUpdate(latest);
+  } else {
+    // The double-click also sets up the helper, so this is the last time.
+    text.textContent = withoutHelper(helper, latest);
+    offerFolder();
+  }
   $('update').hidden = false;
+}
+
+/**
+ * Just updated from before the Update now button, by that old version's
+ * updater, which cannot switch the button on: one more double-click does.
+ * Said until the button works, while there is nothing newer to say instead.
+ */
+async function renderHelperHint() {
+  const { helperHint } = await chrome.storage.local.get('helperHint');
+  if (!helperHint) return;
+  const helper = await helperStatus();
+  if (helper === 'ready') return chrome.storage.local.remove('helperHint');
+  if (helper !== 'missing') return;
+  $('update-text').textContent = 'One more double-click on "Update Quiz Answers" in the extension\'s folder switches on the "Update now" button.';
+  offerFolder();
+  $('update').hidden = false;
+}
+
+/** The details page for an unpacked extension shows the folder it loads from. */
+function offerFolder() {
+  const action = $('update-action');
+  action.textContent = 'Where is the folder?';
+  action.onclick = () => chrome.tabs.create({ url: `chrome://extensions/?id=${chrome.runtime.id}` });
+  action.disabled = false;
+  action.hidden = false;
+}
+
+/** "Update now": the helper replaces the files, then the extension restarts onto them. */
+async function runUpdate(latest) {
+  const text = $('update-text');
+  const action = $('update-action');
+  // Out of the way while it works: a button that is still there looks like it still wants a click.
+  action.hidden = true;
+  text.textContent = `Updating to ${latest}… this takes a few seconds.`;
+
+  const res = await updateNow();
+
+  // New files on disk is what counts, not how the updater worded it: a run
+  // that first repaired an interrupted one says that too.
+  const installed = res?.ok ? await pendingRestart() : null;
+  if (installed) {
+    let held = 1;
+    try { held = await answersHeld(); } catch { /* assume there is something to lose */ }
+    if (!held) {
+      // Nothing to lose by restarting, and the person asked for the update.
+      text.textContent = `${res.summary || `Version ${installed} is installed.`} Restarting… click the icon again in a moment.`;
+      action.textContent = 'Restart to finish';
+      action.onclick = restart;
+      await new Promise((r) => setTimeout(r, 1200));
+      return restart();
+    }
+    return renderUpdate(); // explains that it switches over once those answers are closed
+  }
+  if (res?.ok) {
+    text.textContent = res.summary || 'You already have the latest version.';
+    return;
+  }
+  const why = res?.summary || res?.error?.message || 'The update did not work.';
+  text.textContent = `${why} You can still update with a double-click on "Update Quiz Answers" in the extension's folder.`;
+  offerFolder();
 }
 
 (async function init() {

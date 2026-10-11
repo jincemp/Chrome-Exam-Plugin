@@ -7,7 +7,7 @@
 
 import { answerQuestions, OpenAIError, TruncatedError } from './openai.js';
 import { clearJob, getJob, getSettings, pageKey, setJob } from './storage.js';
-import { answersHeld, restartIfUpdated } from './update.js';
+import { answersHeld, compareVersions, HELPER, readyToRestart, restartIfUpdated } from './update.js';
 
 /*
  * A whole page in one request wherever it fits. Splitting is not free accuracy-
@@ -566,18 +566,48 @@ function stopKeepAlive() {
 
 /* ---------------------------------------------------------------- messages */
 
-chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
+chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   (async () => {
     try {
+      // Restarting and updating are for this extension's own pages to ask
+      // for - its popup and settings - never for a script inside a web page.
+      const fromOwnPage = sender?.id === chrome.runtime.id && String(sender?.url || '').startsWith(chrome.runtime.getURL(''));
+      if ((message?.type === 'restart' || message?.type === 'update') && !fromOwnPage) {
+        sendResponse({ ok: false, error: { message: 'Not allowed from here.' } });
+        return;
+      }
+
       // From the popup's or settings page's restart button, after an update.
       if (message?.type === 'restart') {
         if (running.size) {
           sendResponse({ ok: false, busy: true });
           return;
         }
+        // A settings page open in a tab would close with the restart, and with
+        // it anything typed there and not saved. Its own Restart button may go
+        // ahead; the popup's waits until it is closed.
+        const settings = chrome.runtime.getURL('options/options.html');
+        if (!String(sender?.url || '').startsWith(settings)) {
+          const tabs = await chrome.runtime.getContexts({ contextTypes: ['TAB'] }).catch(() => []);
+          if (tabs.some((c) => String(c.documentUrl || '').startsWith(settings))) {
+            sendResponse({ ok: false, settingsOpen: true });
+            return;
+          }
+        }
+        // Still being copied in: restarting now would leave nothing running.
+        if (!(await readyToRestart())) {
+          sendResponse({ ok: false, copying: true });
+          return;
+        }
         sendResponse({ ok: true });
         // A moment for the reply to arrive before this worker goes away.
         setTimeout(() => chrome.runtime.reload(), 100);
+        return;
+      }
+
+      // The "Update now" button.
+      if (message?.type === 'update') {
+        sendResponse(await updateOnce());
         return;
       }
 
@@ -633,6 +663,50 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
   return true; // keeps the response channel open for the async work above
 });
 
+/** Chrome's word for what went wrong with the helper, in plainer ones. */
+/*
+ * The "Update now" button: the helper runs the same updater a double-click
+ * would, and answers when it has finished. One run at a time, however many
+ * pages ask - a second click, or the popup and the settings page together, get
+ * the answer of the run already going. Kept alive while it runs, so it
+ * finishes even if the page that asked has closed meanwhile.
+ */
+let updateInFlight = null;
+function updateOnce() {
+  updateInFlight ||= (async () => {
+    startKeepAlive();
+    let reply;
+    try {
+      reply = await chrome.runtime.sendNativeMessage(HELPER, { type: 'update' });
+      if (!reply || typeof reply !== 'object') reply = { ok: false, error: { message: 'The update helper did not answer.' } };
+    } catch (err) {
+      reply = { ok: false, error: { message: helperProblem(err) } };
+    } finally {
+      stopKeepAlive();
+      updateInFlight = null;
+    }
+    // The page that asked may be gone by now: on a Mac the update's Terminal
+    // window takes the focus, and the popup closes with it. So the switch-over
+    // is finished from here - as soon as it would cost nothing, and only if
+    // there are new files to switch to.
+    if (reply.ok) restartIfUpdatedWhenIdleSoon();
+    return reply;
+  })();
+  return updateInFlight;
+}
+
+function helperProblem(err) {
+  const m = String(err?.message || err || '');
+  if (/not found/i.test(m)) return 'The update helper is not set up yet.';
+  if (/forbidden/i.test(m)) return 'The update helper belongs to another copy of Quiz Answers.';
+  if (/exited/i.test(m)) return 'The update helper stopped before it finished.';
+  // What a Mac says when the helper cannot be run at all, e.g. it lost its "executable" mark.
+  if (/failed to start/i.test(m)) return 'The update helper could not start.';
+  // NativeMessagingBlocklist: a managed computer.
+  if (/administrator/i.test(m)) return 'Whoever manages this computer has switched off updating from here.';
+  return m || 'The update helper did not work.';
+}
+
 /* ------------------------------------------------------------ tab lifecycle */
 
 chrome.tabs.onUpdated.addListener(async (tabId, changeInfo) => {
@@ -663,7 +737,15 @@ chrome.tabs.onRemoved.addListener((tabId) => {
 // A fresh worker has no per-tab icon state, and session storage may still hold
 // finished jobs from before it was torn down. Put the badges back.
 chrome.runtime.onStartup.addListener(() => restoreBadges());
-chrome.runtime.onInstalled.addListener(() => restoreBadges());
+chrome.runtime.onInstalled.addListener((details) => {
+  restoreBadges();
+  // An update from a version before the Update now button was run by that
+  // old version's updater, which cannot switch the button on: it takes one
+  // more double-click. The popup says so until the button works.
+  if (details?.reason === 'update' && details.previousVersion && compareVersions(details.previousVersion, '1.9.0') < 0) {
+    chrome.storage.local.set({ helperHint: true }).catch(() => {});
+  }
+});
 
 async function restoreBadges() {
   try {
@@ -700,7 +782,28 @@ async function restartIfUpdatedWhenIdle() {
     if (open.length) return;
   } catch { /* getContexts needs Chrome 116, which the manifest already requires */ }
   if (await answersHeld()) return;
-  await restartIfUpdated();
+  let waiting = false;
+  await restartIfUpdated({ onWaiting: () => { waiting = true; } });
+  if (waiting) retrySoon();
+  else waitingSince = 0;
+}
+
+/*
+ * A new version is on disk but not all of it can be read yet - someone is
+ * copying it in by hand. Look again shortly, for a couple of minutes; after
+ * that the next start of this worker looks again anyway.
+ */
+const RETRY_EVERY_MS = 3000;
+const RETRY_FOR_MS = 2 * 60 * 1000;
+let waitingSince = 0;
+let retryTimer = null;
+function retrySoon() {
+  if (!waitingSince) waitingSince = Date.now();
+  if (retryTimer || Date.now() - waitingSince > RETRY_FOR_MS) return;
+  retryTimer = setTimeout(() => {
+    retryTimer = null;
+    restartIfUpdatedWhenIdleSoon();
+  }, RETRY_EVERY_MS);
 }
 
 function restartIfUpdatedWhenIdleSoon() {

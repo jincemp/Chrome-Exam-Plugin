@@ -13,8 +13,8 @@
 # order mark as the local code page, and mangles anything else.
 #
 # Test hooks, used only by tools/updater-test.mjs and inert unless set:
-# QUIZ_ANSWERS_ZIP_URL, _FAIL_AFTER, _FAIL_UNDO, _QUIT_AFTER, _TRACE and
-# _ONEDRIVE.
+# QUIZ_ANSWERS_ZIP_URL, _FAIL_AFTER, _FAIL_UNDO, _QUIT_AFTER, _TRACE,
+# _ONEDRIVE and _NATIVE_DIR.
 
 # First, and in plain commands only. Where an App Control policy - Smart App
 # Control, or one an organisation sets - has not approved this script, Windows
@@ -25,8 +25,8 @@ if ($ExecutionContext.SessionState.LanguageMode -ne 'FullLanguage') {
   Write-Host 'because Smart App Control (or a policy set by your organisation) has'
   Write-Host 'not approved it. Nothing was changed.'
   Write-Host ''
-  Write-Host 'Update Quiz Answers by hand instead: see "Updating by hand" in the'
-  Write-Host 'README at https://github.com/jincemp/Chrome-Exam-Plugin'
+  Write-Host 'Update Quiz Answers by hand instead: do part A of the update guide,'
+  Write-Host 'HOW-TO-UPDATE.md at https://github.com/jincemp/Chrome-Exam-Plugin'
   Write-Host ''
   $null = Read-Host 'Press Enter to close this window'
   exit 1
@@ -37,6 +37,9 @@ $ProgressPreference = 'SilentlyContinue'   # the progress bar makes downloads ma
 
 $ZipUrl = if ($env:QUIZ_ANSWERS_ZIP_URL) { $env:QUIZ_ANSWERS_ZIP_URL } else { 'https://github.com/jincemp/Chrome-Exam-Plugin/archive/refs/heads/main.zip' }
 $AppName = 'Quiz Answers'
+# The name Quiz Answers asks Chrome for when its "Update now" button is pressed.
+$HelperName = 'com.jincemp.quiz_answers'
+$script:OnWindows = $env:OS -eq 'Windows_NT'
 
 # PowerShell names are case-insensitive, so none of these may share a name
 # with a variable used anywhere else in the script: $Latest and $latest would
@@ -52,6 +55,7 @@ $script:Count = 0
 $script:EntryInProgress = $null
 $script:InstalledVersion = $null
 $script:Recovered = $false
+$script:Lock = $null
 
 function Pause-ForReader {
   # Only when a person is at the window - never when run by a test.
@@ -139,6 +143,12 @@ function Remove-Scratch {
       Remove-Item -LiteralPath $script:Backup -Force -ErrorAction Stop
     }
   } catch { }
+  # Every way this script ends after taking the lock comes through here. The
+  # lock file goes with it.
+  if ($script:Lock) {
+    try { $script:Lock.Dispose() } catch { }
+    $script:Lock = $null
+  }
 }
 
 function Stop-WithFailure([string]$why) {
@@ -221,6 +231,120 @@ function Restore-InterruptedRun {
   return $true
 }
 
+# The ID Chrome gives an extension loaded unpacked from folder $path: the first
+# half of the SHA-256 of the path, written with the letters a to p. Windows
+# Chrome hashes the path as UTF-16 with the drive letter in capitals; Chrome
+# elsewhere hashes the UTF-8 bytes.
+function Get-ExtensionId([string]$path) {
+  if ($script:OnWindows) {
+    if ($path -match '^[a-z]:') { $path = $path.Substring(0, 1).ToUpper() + $path.Substring(1) }
+    $bytes = [Text.Encoding]::Unicode.GetBytes($path)
+  } else {
+    $bytes = [Text.Encoding]::UTF8.GetBytes($path)
+  }
+  $hash = [Security.Cryptography.SHA256]::Create().ComputeHash($bytes)
+  $id = ''
+  foreach ($b in $hash[0..15]) {
+    $id += [string][char](97 + ($b -shr 4)) + [string][char](97 + ($b -band 15))
+  }
+  return $id
+}
+
+# The folder as Chrome's folder picker gives it: every name spelled as it is
+# on disk, and long names rather than 8.3 ones such as QUIZAN~1. Chrome follows
+# no junctions or links, so neither does this.
+function Get-OnDiskPath([string]$path) {
+  try {
+    $full = [IO.Path]::GetFullPath($path)
+    $root = [IO.Path]::GetPathRoot($full)
+    $cur = $root
+    foreach ($part in $full.Substring($root.Length).Split([char[]]@('\', '/'), [StringSplitOptions]::RemoveEmptyEntries)) {
+      $name = $part
+      try {
+        $hit = @(([IO.DirectoryInfo]$cur).GetDirectories($part)) | Select-Object -First 1
+        if ($hit) { $name = $hit.Name }
+      } catch { }
+      $cur = [IO.Path]::Combine($cur, $name)
+    }
+    return $cur
+  } catch {
+    return $path
+  }
+}
+
+# The IDs Chrome may have given this copy: from the path as this script was
+# started, and as Chrome's folder picker would spell it. A spare ID does no
+# harm, and a missing one means no button, so both are listed.
+function Get-ExtensionIds([string]$path) {
+  $ids = New-Object System.Collections.ArrayList
+  foreach ($p in @($path, (Get-OnDiskPath $path))) {
+    $id = Get-ExtensionId $p
+    if (-not $ids.Contains($id)) { [void]$ids.Add($id) }
+  }
+  return $ids.ToArray()
+}
+
+# Writes $bytes to $path, unless it already holds exactly them: a helper that
+# is running from that file is left undisturbed. A file written here is new,
+# so it carries no "came from the internet" mark.
+function Write-IfChanged([string]$path, [byte[]]$bytes) {
+  if (Test-Path -LiteralPath $path) {
+    if ([Convert]::ToBase64String([IO.File]::ReadAllBytes($path)) -eq [Convert]::ToBase64String($bytes)) { return }
+  }
+  [IO.File]::WriteAllBytes($path, $bytes)
+}
+
+# Sets up the "Update now" button: copies of updater\native-host.bat and .ps1
+# in %LOCALAPPDATA%\Quiz Answers, a note beside them of which folder to update,
+# and the small file that tells Chrome about the helper, for this copy of Quiz
+# Answers alone, named in the registry, where Windows Chrome looks. The helper
+# lives outside this folder because Chrome starts it in its own folder, and
+# Windows will not rename a folder that a program - cmd.exe, or the console it
+# opens - is working in, while the update has to rename updater\. Repeated
+# after every run, so all of it stays up to date. Never throws: no
+# registration only means no button, and the double-click still works.
+# Returns $true when registered.
+function Install-Helper {
+  try {
+    $bat = Join-Path (Join-Path $script:Dir 'updater') 'native-host.bat'
+    $ps1 = Join-Path (Join-Path $script:Dir 'updater') 'native-host.ps1'
+    if (-not ((Test-Path -LiteralPath $bat) -and (Test-Path -LiteralPath $ps1))) { return $false }
+    $origins = @(foreach ($id in (Get-ExtensionIds $script:Dir)) { "chrome-extension://$id/" })
+    # QUIZ_ANSWERS_NATIVE_DIR is a test hook.
+    $where = if ($env:QUIZ_ANSWERS_NATIVE_DIR) { $env:QUIZ_ANSWERS_NATIVE_DIR } else { Join-Path $env:LOCALAPPDATA 'Quiz Answers' }
+    [void](New-Item -ItemType Directory -Force -Path $where)
+    Write-IfChanged (Join-Path $where 'native-host.ps1') ([IO.File]::ReadAllBytes($ps1))
+    Write-IfChanged (Join-Path $where 'native-host.bat') ([IO.File]::ReadAllBytes($bat))
+    Write-IfChanged (Join-Path $where 'folder.txt') ((New-Object Text.UTF8Encoding $false).GetBytes($script:Dir))
+    $file = Join-Path $where "$HelperName.json"
+    $manifest = [ordered]@{
+      name = $HelperName
+      description = 'Quiz Answers: updates itself when its Update now button is pressed'
+      path = (Join-Path $where 'native-host.bat')
+      type = 'stdio'
+      allowed_origins = $origins
+    }
+    [IO.File]::WriteAllText($file, ($manifest | ConvertTo-Json), (New-Object Text.UTF8Encoding $false))
+    if ($script:OnWindows -and -not $env:QUIZ_ANSWERS_NATIVE_DIR) {
+      $key = "HKCU:\Software\Google\Chrome\NativeMessagingHosts\$HelperName"
+      [void](New-Item -Path $key -Force)
+      Set-Item -Path $key -Value $file
+    }
+    return $true
+  } catch {
+    return $false
+  }
+}
+
+# Registers the helper, and says what that means for next time.
+function Show-HelperReady {
+  if (Install-Helper) {
+    Write-Host ''
+    Write-Host 'From now on Quiz Answers can update itself: when a new version is out,'
+    Write-Host 'click "Update now" in its window.'
+  }
+}
+
 # Anything not handled below still gets explained, in a window that stays open
 # long enough to read it. Without this, the window just closes. A trap covers
 # the whole script but a function exists only once its definition has run, so
@@ -252,15 +376,35 @@ foreach ($f in @((Join-Path $script:Dir 'Update Quiz Answers.bat'), $PSCommandPa
   try { Unblock-File -LiteralPath $f -ErrorAction SilentlyContinue } catch { }
 }
 
+# One update of this folder at a time. Two at once would each take the other's
+# half-done swap for an interrupted run, and undo it - a double-click while the
+# Update now button's run is going, say. Windows lets go of the file when this
+# process ends, however it ends. Before anything that deletes: a run turned
+# away here must not touch the scratch folders of the run that is going.
+try {
+  # Deleted when it is let go of - by the end of this script, or by Windows if
+  # this process is stopped.
+  $script:Lock = New-Object IO.FileStream((Join-Path $script:Dir '.update-lock'), [IO.FileMode]::OpenOrCreate, [IO.FileAccess]::ReadWrite, [IO.FileShare]::None, 1, [IO.FileOptions]::DeleteOnClose)
+  try { [IO.File]::SetAttributes((Join-Path $script:Dir '.update-lock'), [IO.FileAttributes]::Hidden) } catch { }
+} catch [IO.IOException] {
+  Write-Host ''
+  Write-Host 'Update failed: another update of Quiz Answers is running right now. Let it finish, then try again if you need to.'
+  Pause-ForReader
+  exit 1
+} catch {
+  # Not a lock held elsewhere - most likely a folder this cannot write to,
+  # which the update itself explains in a moment.
+}
+
 $script:Staging = Join-Path $script:Dir '.update-new'
 $script:Backup = Join-Path $script:Dir '.update-old'
 $script:Trash = Join-Path $script:Dir '.update-trash'
 
 if (-not (Restore-InterruptedRun)) {
   Write-Host ''
-  Write-Host 'Update failed: the last update did not finish, and the files it moved'
-  Write-Host 'aside could not be put back. They are safe in the hidden ".update-old"'
-  Write-Host 'folder inside Quiz Answers. Nothing else was changed.'
+  Write-Host 'Update failed: the last update did not finish, and its files could not be put back.'
+  Write-Host 'They are safe in the hidden ".update-old" folder inside Quiz Answers.'
+  Write-Host 'Nothing else was changed.'
   Remove-Scratch
   Pause-ForReader
   exit 1
@@ -277,7 +421,8 @@ try {
   $script:Work = Join-Path ([IO.Path]::GetTempPath()) ('quiz-answers-update-' + [Guid]::NewGuid().ToString('N'))
   [void](New-Item -ItemType Directory -Path $script:Work)
   $zip = Join-Path $script:Work 'latest.zip'
-  Invoke-WebRequest -Uri $ZipUrl -OutFile $zip -UseBasicParsing
+  # A download that stalls is given up on, not waited for forever.
+  Invoke-WebRequest -Uri $ZipUrl -OutFile $zip -UseBasicParsing -TimeoutSec 120
 } catch {
   Stop-WithFailure 'could not download the latest version. Check your internet connection and try again.'
 }
@@ -310,6 +455,7 @@ if (-not (Test-Newer $downloaded $(if ($script:InstalledVersion) { $script:Insta
   Write-Host ''
   Write-Host "You already have the latest version ($($script:InstalledVersion))."
   Remove-Scratch
+  Show-HelperReady
   Pause-ForReader
   exit 0
 }
@@ -346,5 +492,6 @@ Write-Host 'Last step: click the Quiz Answers icon in Chrome. It usually switche
 Write-Host 'the new version by itself; if it shows "Restart to finish", click that.'
 Write-Host 'Keep "Developer mode" on at chrome://extensions - Quiz Answers only runs'
 Write-Host 'while it is on.'
+Show-HelperReady
 Pause-ForReader
 exit 0

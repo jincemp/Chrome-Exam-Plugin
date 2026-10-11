@@ -11,9 +11,11 @@
 import assert from 'node:assert/strict';
 import http from 'node:http';
 import path from 'node:path';
-import { cpSync, mkdtempSync, readFileSync, writeFileSync, rmSync } from 'node:fs';
+import { cpSync, mkdtempSync, readFileSync, renameSync, writeFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { fileURLToPath } from 'node:url';
+import { spawn, execFileSync } from 'node:child_process';
+import { createHash } from 'node:crypto';
 import { chromium } from 'playwright-core';
 
 const root = path.dirname(path.dirname(fileURLToPath(import.meta.url)));
@@ -117,6 +119,9 @@ const seen = { bodies: [], paths: [], updateChecks: [] };
 /** The version the mock "GitHub" says is published. Defaults to this build: no update. */
 let published = JSON.parse(readFileSync(path.join(root, 'manifest.json'), 'utf8')).version;
 
+/** What /latest.zip serves; built from the test extension when a scenario needs it. */
+let latestZip = Buffer.alloc(0);
+
 /** Flipped between scenarios to exercise the client's fallback paths. */
 let mode = 'responses';
 
@@ -164,6 +169,12 @@ const server = http.createServer((req, res) => {
   // Stands in for raw.githubusercontent.com. Served with the same CORS header
   // GitHub sends, and fetched via localhost - an origin this test extension is
   // NOT granted - so the update check passing here means it needs no permission.
+  // The release the "Update now" button downloads, through the real helper.
+  if (url.pathname === '/latest.zip') {
+    res.writeHead(200, { 'content-type': 'application/zip' }).end(latestZip);
+    return;
+  }
+
   if (url.pathname === '/update/manifest.json') {
     seen.updateChecks.push(req.headers.origin || '');
     res.writeHead(200, { 'content-type': 'text/plain; charset=utf-8', 'access-control-allow-origin': '*' })
@@ -269,7 +280,8 @@ const origin = `http://127.0.0.1:${port}`;
 // grant. The copy adds the test origin so injection is allowed; nothing else
 // about the extension changes.
 const extDir = mkdtempSync(path.join(tmpdir(), 'quiz-ext-'));
-for (const entry of ['manifest.json', 'src', 'popup', 'options', 'icons']) {
+// The updater and its helper too: the "Update now" scenario runs them for real.
+for (const entry of ['manifest.json', 'src', 'popup', 'options', 'icons', 'updater', 'Update Quiz Answers.command']) {
   cpSync(path.join(root, entry), path.join(extDir, entry), { recursive: true });
 }
 const manifest = JSON.parse(readFileSync(path.join(extDir, 'manifest.json'), 'utf8'));
@@ -286,6 +298,9 @@ const userDataDir = mkdtempSync(path.join(tmpdir(), 'quiz-profile-'));
 const context = await chromium.launchPersistentContext(userDataDir, {
   executablePath: '/opt/pw-browsers/chromium-1194/chrome-linux/chrome',
   headless: false,
+  // Chrome hands its environment to the helpers it starts: the "Update now"
+  // helper's updater downloads from the mock instead of GitHub.
+  env: { ...process.env, QUIZ_ANSWERS_ZIP_URL: `${origin}/latest.zip` },
   args: [
     '--headless=new',
     '--no-sandbox',
@@ -1084,6 +1099,27 @@ try {
     assert.match(restartNote, /Version 99\.0\.1 is installed/);
   });
 
+  // The driver is a settings page, open in a tab. Restarting would close it,
+  // and anything typed there and not saved: the popup's restart waits for it.
+  await restartPopup.click('#get-answers');
+  await restartPopup.waitForFunction(() => /settings page/.test(document.getElementById('update-text')?.textContent || ''), null, { timeout: 5000 }).catch(() => {});
+  const runningNow = async () => {
+    for (const w of context.serviceWorkers().filter((x) => x.url().includes(extensionId)).reverse()) {
+      try { return await w.evaluate(() => chrome.runtime.getManifest().version); } catch { /* gone */ }
+    }
+    return null;
+  };
+  const heldForSettings = {
+    said: await restartPopup.textContent('#update-text').catch(() => '(the popup closed: it restarted)'),
+    version: await runningNow(),
+  };
+
+  check('with the settings page open, the popup\'s restart waits, and says why', () => {
+    assert.match(heldForSettings.said, /Close the Quiz Answers settings page first/);
+    assert.notEqual(heldForSettings.version, '99.0.1', 'it restarted under the open settings page');
+  });
+
+  await driver.close().catch(() => {});
   const nextWorker = context.waitForEvent('serviceworker', { timeout: 20000 });
   await restartPopup.click('#get-answers').catch(() => { /* the click closes the popup under itself */ });
   const reborn = await nextWorker.catch(() => null);
@@ -1214,7 +1250,221 @@ try {
   });
 
   await elsewhere.close();
+
+  /* ------------- 4. files copied in by hand: never restart onto half of them */
+
+  // Halfway through a copy made by hand: the new manifest has landed, but a
+  // module the worker imports has not. A restart now leaves Chrome with
+  // "Service worker registration failed. Status code: 3" and nothing running
+  // until someone reloads - as an owner found out.
+  await devPage.evaluate((id) => chrome.developerPrivate.deleteExtensionErrors({ extensionId: id }), extensionId).catch(() => {});
+  const aside = path.join(tmpdir(), `update-js-aside-${port}.js`);
+  renameSync(path.join(extDir, 'src', 'update.js'), aside);
+  installUpdate('99.0.3');
+
+  /** The version the running worker reports, or null if none answers. */
+  const liveVersion = async () => {
+    for (const w of context.serviceWorkers().filter((x) => x.url().includes(extensionId)).reverse()) {
+      try { return await w.evaluate(() => chrome.runtime.getManifest().version); } catch { /* gone */ }
+    }
+    return null;
+  };
+  const registrationErrors = async () => {
+    const info = await devPage.evaluate((id) => chrome.developerPrivate.getExtensionInfo(id), extensionId);
+    return [...(info.runtimeErrors || []), ...(info.manifestErrors || [])].map((e) => e.message)
+      .filter((m) => /registration failed|fetching the script/i.test(m));
+  };
+
+  const copyWake = context.waitForEvent('serviceworker', { timeout: 20000 }).catch(() => null);
+  await stopWorker();
+  const copyPage = await context.newPage();
+  await copyPage.goto(`${origin}/long.html`).catch(() => {});
+  await copyWake;
+  await new Promise((r) => setTimeout(r, 4000)); // more than one retry's worth
+  const midCopy = { version: await liveVersion(), errors: await registrationErrors() };
+
+  // "Restart to finish" in the same moment must not do it either.
+  const copyDriver = await context.newPage();
+  await copyDriver.goto(`chrome-extension://${extensionId}/options/options.html`);
+  const refusedMidCopy = await copyDriver.evaluate(() => chrome.runtime.sendMessage({ type: 'restart' })).catch((e) => ({ threw: e.message }));
+  await copyDriver.close();
+
+  check('while files are still being copied in, it does not restart onto them', () => {
+    assert.equal(midCopy.version, '99.0.2', `the extension restarted, or stopped running: ${JSON.stringify(midCopy)}`);
+    assert.deepEqual(midCopy.errors, [], 'Chrome recorded a failed start');
+    assert.equal(refusedMidCopy?.copying, true, `"Restart to finish" went ahead mid-copy: ${JSON.stringify(refusedMidCopy)}`);
+  });
+
+  // The copy finishes. Without anyone touching anything, it switches over.
+  renameSync(aside, path.join(extDir, 'src', 'update.js'));
+  let afterCopy = null;
+  for (let i = 0; i < 60 && afterCopy !== '99.0.3'; i++) {
+    await new Promise((r) => setTimeout(r, 250));
+    afterCopy = await liveVersion();
+  }
+  const afterCopyErrors = await registrationErrors();
+
+  check('once the copy is complete, it switches over by itself, and runs', () => {
+    assert.equal(afterCopy, '99.0.3', 'the extension did not pick up the completed copy');
+    assert.deepEqual(afterCopyErrors, []);
+  });
+
+  await copyPage.close();
+
+  /* --------------------- 5. "Update now": Chrome itself runs the real updater */
+
+  // A release of whatever is in the test folder, at `version`, as GitHub zips it.
+  const buildRelease = (version) => {
+    const stage = mkdtempSync(path.join(tmpdir(), 'quiz-release-'));
+    cpSync(extDir, path.join(stage, 'Chrome-Exam-Plugin-main'), { recursive: true });
+    const relManifest = path.join(stage, 'Chrome-Exam-Plugin-main', 'manifest.json');
+    writeFileSync(relManifest, JSON.stringify({ ...JSON.parse(readFileSync(relManifest, 'utf8')), version }, null, 2));
+    execFileSync('zip', ['-qr', path.join(stage, 'r.zip'), 'Chrome-Exam-Plugin-main'], { cwd: stage });
+    latestZip = readFileSync(path.join(stage, 'r.zip'));
+    rmSync(stage, { recursive: true, force: true });
+  };
+  // Where a Mac keeps the helper, outside the extension's folder.
+  const helperHome = mkdtempSync(path.join(tmpdir(), 'quiz-helper-'));
+  const runSetup = () => new Promise((resolve) => {
+    // The person's one double-click: nothing new to install, so it only registers the helper.
+    const child = spawn('/bin/bash', [path.join(extDir, 'updater', 'update.sh')], {
+      env: { ...process.env, QUIZ_ANSWERS_ZIP_URL: `${origin}/latest.zip`, QUIZ_ANSWERS_CHROME_DIRS: userDataDir, QUIZ_ANSWERS_HELPER_HOME: helperHome },
+      stdio: ['ignore', 'pipe', 'pipe'],
+    });
+    let out = '';
+    child.stdout.on('data', (d) => { out += d; });
+    child.stderr.on('data', (d) => { out += d; });
+    child.on('close', (code) => resolve({ code, out }));
+  });
+
+  const installedNow = JSON.parse(readFileSync(path.join(extDir, 'manifest.json'), 'utf8')).version;
+
+  // Coming from 1.8.x, the old updater installs this version but cannot switch
+  // the button on. Played here by reloading onto 1.8.1, then back onto this.
+  const reloadOnto = async (version) => {
+    const back = context.waitForEvent('serviceworker', { timeout: 20000 }).catch(() => null);
+    installUpdate(version);
+    await devPage.evaluate((id) => chrome.developerPrivate.reload(id, { failQuietly: true }), extensionId);
+    await back;
+    await new Promise((r) => setTimeout(r, 1000));
+  };
+  await reloadOnto('1.8.1');
+  await reloadOnto(installedNow);
+  for (const w of context.serviceWorkers().filter((x) => x.url().includes(extensionId)).reverse()) {
+    try { await w.evaluate(() => chrome.storage.local.remove('updateCheck')); break; } catch { /* gone */ }
+  }
+  const hintPopup = await openPopupFor(quizTabId);
+  await hintPopup.waitForSelector('#update:not([hidden])', { timeout: 10000 }).catch(() => {});
+  const hint = await hintPopup.textContent('#update').catch(() => '');
+  await hintPopup.close();
+
+  check('after an update from 1.8.x, the popup asks for the one more double-click that switches the button on', () => {
+    assert.match(hint, /One more double-click on "Update Quiz Answers"/);
+    assert.match(hint, /Where is the folder\?/);
+  });
+
+  buildRelease(installedNow);
+  const setup = await runSetup();
+  const registered = (() => {
+    try { return JSON.parse(readFileSync(path.join(userDataDir, 'NativeMessagingHosts', 'com.jincemp.quiz_answers.json'), 'utf8')); } catch { return null; }
+  })();
+  const computedId = [...createHash('sha256').update(extDir).digest('hex').slice(0, 32)].map((c) => String.fromCharCode(97 + parseInt(c, 16))).join('');
+
+  check('the double-click registers the helper under the ID Chrome really uses', () => {
+    assert.equal(setup.code, 0, setup.out);
+    assert.match(setup.out, /click "Update now"/);
+    assert.ok(registered?.allowed_origins?.includes(`chrome-extension://${extensionId}/`), `computed ${registered?.allowed_origins} (${computedId}), Chrome uses ${extensionId}`);
+  });
+
+  installUpdate(installedNow); // keep "published" in step with the folder
+  const nextVersion = '99.1.0';
+  buildRelease(nextVersion);
+  published = nextVersion;
+  await devPage.evaluate((id) => chrome.developerPrivate.deleteExtensionErrors({ extensionId: id }), extensionId).catch(() => {});
+
+  // Forget the last hourly check, as the earlier update scenarios do: the new
+  // release has to be seen now, not within the hour.
+  for (const w of context.serviceWorkers().filter((x) => x.url().includes(extensionId)).reverse()) {
+    try { await w.evaluate(() => chrome.storage.local.remove('updateCheck')); break; } catch { /* gone */ }
+  }
+  const updatePage = await openPopupFor(quizTabId);
+  await updatePage.waitForFunction(() => document.getElementById('update-action')?.textContent === 'Update now', null, { timeout: 15000 }).catch(() => {});
+  const offered = { text: await updatePage.textContent('#update-text'), button: await updatePage.textContent('#update-action') };
+
+  check('with the helper registered, the popup offers "Update now"', () => {
+    assert.match(offered.text, new RegExp(`Version ${nextVersion.replace(/\./g, '\\.')} is out`));
+    assert.equal(offered.button, 'Update now');
+  });
+
+  const reborn2 = context.waitForEvent('serviceworker', { timeout: 60000 }).catch(() => null);
+  await updatePage.click('#update-action').catch(() => {});
+  let progress = '';
+  try {
+    await updatePage.waitForFunction(() => /Updated Quiz Answers|did not work|helper/i.test(document.getElementById('update-text')?.textContent || ''), null, { timeout: 60000 });
+    progress = await updatePage.textContent('#update-text');
+  } catch { /* the page closed under the restart */ }
+  await reborn2;
+  let afterButton = null;
+  for (let i = 0; i < 80 && afterButton?.version !== nextVersion; i++) {
+    await new Promise((r) => setTimeout(r, 250));
+    for (const w of context.serviceWorkers().filter((x) => x.url().includes(extensionId)).reverse()) {
+      try {
+        afterButton = await w.evaluate(async () => ({ version: chrome.runtime.getManifest().version, apiKey: (await chrome.storage.local.get('apiKey')).apiKey, id: chrome.runtime.id }));
+        break;
+      } catch { /* gone */ }
+    }
+  }
+  const afterButtonErrors = await registrationErrors();
+
+  check('"Update now" downloads, installs and restarts onto the new version, keeping the key', () => {
+    assert.equal(afterButton?.version, nextVersion, `still ${afterButton?.version}; the popup said: ${progress}`);
+    assert.equal(afterButton?.id, extensionId);
+    assert.equal(afterButton?.apiKey, 'sk-test-key');
+    assert.deepEqual(afterButtonErrors, []);
+  });
+
+  // On a Mac the update runs in a Terminal window, which takes the focus, and
+  // the popup closes while the helper is still at work. The switch-over then
+  // has to come from the extension itself.
+  const lastVersion = '99.2.0';
+  buildRelease(lastVersion);
+  published = lastVersion;
+  for (const w of context.serviceWorkers().filter((x) => x.url().includes(extensionId)).reverse()) {
+    try { await w.evaluate(() => chrome.storage.local.remove('updateCheck')); break; } catch { /* gone */ }
+  }
+  const shortLived = await openPopupFor(quizTabId);
+  await shortLived.waitForFunction(() => document.getElementById('update-action')?.textContent === 'Update now', null, { timeout: 15000 }).catch(() => {});
+  await shortLived.click('#update-action').catch(() => {});
+  await shortLived.close();
+  let afterClosed = null;
+  for (let i = 0; i < 160 && afterClosed?.version !== lastVersion; i++) {
+    await new Promise((r) => setTimeout(r, 250));
+    for (const w of context.serviceWorkers().filter((x) => x.url().includes(extensionId)).reverse()) {
+      try {
+        afterClosed = await w.evaluate(async () => ({ version: chrome.runtime.getManifest().version, apiKey: (await chrome.storage.local.get('apiKey')).apiKey }));
+        break;
+      } catch { /* gone */ }
+    }
+  }
+  const afterClosedErrors = await registrationErrors();
+
+  let hintLeft = null;
+  for (const w of context.serviceWorkers().filter((x) => x.url().includes(extensionId)).reverse()) {
+    try { hintLeft = (await w.evaluate(() => chrome.storage.local.get('helperHint'))).helperHint ?? false; break; } catch { /* gone */ }
+  }
+
+  check('once the button works, the popup stops asking for the double-click', () => {
+    assert.equal(hintLeft, false);
+  });
+
+  check('with the popup closed mid-update, as on a Mac, it still switches over by itself', () => {
+    assert.equal(afterClosed?.version, lastVersion, `still ${afterClosed?.version}`);
+    assert.equal(afterClosed?.apiKey, 'sk-test-key');
+    assert.deepEqual(afterClosedErrors, []);
+  });
+
   await devPage.close();
+  rmSync(helperHome, { recursive: true, force: true });
 } finally {
   await context.close();
   server.close();

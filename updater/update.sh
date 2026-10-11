@@ -29,11 +29,18 @@
 # it goes. So everything is in functions and the work starts on the last line:
 # bash has read all of it before any of it runs.
 #
-# Test hooks, used only by tools/updater-test.mjs and inert unless set:
-# QUIZ_ANSWERS_ZIP_URL, _FAIL_AFTER, _FAIL_UNDO, _QUIT_AFTER and _TRACE.
+# Test hooks, used only by tools/updater-test.mjs and tools/e2e.mjs, inert
+# unless set: QUIZ_ANSWERS_ZIP_URL, _FAIL_AFTER, _FAIL_UNDO, _QUIT_AFTER,
+# _TRACE, _CHROME_DIRS and _HELPER_HOME.
+#
+# QUIZ_ANSWERS_REPORT is not a test hook: the "Update now" button's launcher
+# sets it, and everything said then goes to that file too, ending with a
+# "-- done --" line, so the helper Chrome started can tell how the run went.
 
 ZIP_URL="${QUIZ_ANSWERS_ZIP_URL:-https://github.com/jincemp/Chrome-Exam-Plugin/archive/refs/heads/main.zip}"
 APP_NAME='Quiz Answers'
+# The name Quiz Answers asks Chrome for when its "Update now" button is pressed.
+HELPER_NAME='com.jincemp.quiz_answers'
 
 # Globals, not locals: the EXIT trap and the rollback both need them, and they
 # must not depend on which function happens to be running when the trap fires.
@@ -48,14 +55,42 @@ SWAPPED=()
 COUNT=0
 DISCARDED=0
 RECOVERED=0
+LOCK=''
+DONE=0
 
-say() { printf '%s\n' "$*"; }
+REPORT="${QUIZ_ANSWERS_REPORT:-}"
+
+say() {
+  printf '%s\n' "$*"
+  if [ -n "$REPORT" ]; then printf '%s\n' "$*" >>"$REPORT" 2>/dev/null; fi
+}
 
 # Keep the window open long enough to read, when a person is there to read it.
 pause() {
+  # Every way this script ends comes through here, with everything said and
+  # all the work done. So let go of the lock and the scratch folders before
+  # waiting for a reader: a window left open must not turn the next update
+  # away, nor - closed later - clean up after it.
+  cleanup
+  trap - EXIT
+  LOCK=''
+  WORK=''
+  STAGING=''
+  BACKUP=''
+  TRASH=''
+  if [ -n "$REPORT" ]; then printf '%s\n' '-- done --' >>"$REPORT" 2>/dev/null; fi
+  DONE=1
   if [ -t 0 ] && [ -t 1 ]; then
     printf '\n'
     read -r -p 'Press Return to close this window. ' _ || true
+  fi
+}
+
+# A run cut off before pause() - its Terminal window closed, say - still tells
+# the "Update now" helper that is waiting for it, rather than leave it waiting.
+report_end() {
+  if [ -n "$REPORT" ] && [ "$DONE" != 1 ]; then
+    printf '%s\n' '' 'Update failed: the update was stopped before it finished.' '-- done --' >>"$REPORT" 2>/dev/null
   fi
 }
 
@@ -82,6 +117,157 @@ newer() {
   return 1
 }
 
+# $1 as a JSON string: quotes, backslashes and control characters escaped.
+json_string() {
+  local s TAB=$'\t'
+  s="$(printf '%s' "$1" | tr -d '\000-\010\013\014\016-\037')"
+  s="${s//\\/\\\\}"
+  s="${s//\"/\\\"}"
+  s="${s//$TAB/\\t}"
+  s="${s//$'\r'/}"
+  s="${s//$'\n'/\\n}"
+  printf '"%s"' "$s"
+}
+
+# The ID Chrome gives an extension loaded unpacked from the path $1: the first
+# half of the path's SHA-256, written with the letters a to p.
+extension_id() {
+  local sum
+  if command -v shasum >/dev/null 2>&1; then
+    sum="$(printf '%s' "$1" | shasum -a 256)"
+  else
+    sum="$(printf '%s' "$1" | sha256sum)"
+  fi
+  printf '%s' "${sum:0:32}" | tr '0-9a-f' 'a-p'
+}
+
+# The IDs Chrome may have given this copy, one per line. Chrome hashes the
+# folder's real path, as realpath(3) gives it: links followed and every name
+# spelled as it is on disk. /bin/realpath and /bin/pwd ask the system for that
+# spelling; bash's own pwd keeps whatever case the path was typed in. A spare
+# ID does no harm, and a missing one means no button, so all of them are listed.
+extension_ids() {
+  local p
+  {
+    printf '%s\n' "$1"
+    (cd "$1" 2>/dev/null && /bin/pwd -P 2>/dev/null)
+    if [ -x /bin/realpath ]; then /bin/realpath "$1" 2>/dev/null; fi
+  } | while IFS= read -r p; do
+    if [ -n "$p" ]; then extension_id "$p"; echo; fi
+  done | awk 'NF && !seen[$0]++'
+}
+
+# Chrome's own folders on this computer, one per line. The helper is
+# registered in each one that exists.
+chrome_dirs() {
+  if [ -n "$QUIZ_ANSWERS_CHROME_DIRS" ]; then
+    printf '%s\n' "$QUIZ_ANSWERS_CHROME_DIRS" | tr ':' '\n' # test hook only
+    return
+  fi
+  case "$(uname -s)" in
+    Darwin)
+      local support="$HOME/Library/Application Support"
+      printf '%s\n' "$support/Google/Chrome" "$support/Google/Chrome Beta" "$support/Google/Chrome Dev" \
+        "$support/Google/Chrome Canary" "$support/Chromium"
+      ;;
+    *) printf '%s\n' "$HOME/.config/google-chrome" "$HOME/.config/chromium" ;;
+  esac
+}
+
+# Writes the small file that tells Chrome where the helper is, and that only
+# this copy of Quiz Answers may start it. $3 is its IDs, one per line.
+write_helper_manifest() {
+  local file="$1" helper="$2" id origins=''
+  for id in $3; do origins="$origins${origins:+, }\"chrome-extension://$id/\""; done
+  {
+    printf '{\n'
+    printf '  "name": "%s",\n' "$HELPER_NAME"
+    printf '  "description": "Quiz Answers: updates itself when its Update now button is pressed",\n'
+    printf '  "path": %s,\n' "$(json_string "$helper")"
+    printf '  "type": "stdio",\n'
+    printf '  "allowed_origins": [%s]\n' "$origins"
+    printf '}\n'
+  } >"$file"
+}
+
+# Where the "Update now" helper lives: outside this folder, on purpose. macOS
+# guards Documents, Desktop and Downloads, and Chrome starts the helper as a
+# program of its own, which the person has never let in there - so the helper
+# could not even read itself from this folder, let alone change it.
+helper_home() {
+  if [ -n "$QUIZ_ANSWERS_HELPER_HOME" ]; then
+    printf '%s\n' "$QUIZ_ANSWERS_HELPER_HOME" # test hook only
+    return
+  fi
+  case "$(uname -s)" in
+    Darwin) printf '%s\n' "$HOME/Library/Application Support/Quiz Answers" ;;
+    *) printf '%s\n' "${XDG_DATA_HOME:-$HOME/.local/share}/quiz-answers" ;;
+  esac
+}
+
+# Writes $2 to the file $1, executable, by renaming a finished copy into place:
+# a helper or launcher that is running from the old file keeps reading that.
+put_executable() {
+  local tmp="$1.new.$$"
+  if printf '%s' "$2" >"$tmp" 2>/dev/null && chmod 755 "$tmp" && mv -f "$tmp" "$1"; then return 0; fi
+  rm -f "$tmp" 2>/dev/null
+  return 1
+}
+
+# Sets up the "Update now" button: the helper (a copy of updater/native-host.sh)
+# and the launcher it opens - in Terminal on a Mac, so the update runs exactly
+# as a double-click on "Update Quiz Answers" does, where macOS lets it change
+# this folder - and the small file that tells Chrome about the helper, for this
+# copy of Quiz Answers alone. Repeated after every run, so all of it stays up
+# to date and points at this folder. Returns 1 if there was nowhere to register
+# (no Chrome found): that only means no button, and the double-click still works.
+install_helper() {
+  local home ids dir registered=1
+  [ -f "$DIR/updater/native-host.sh" ] || return 1
+  ids="$(extension_ids "$DIR")"
+  [ -n "$ids" ] || return 1
+  home="$(helper_home)"
+  mkdir -p "$home" 2>/dev/null || return 1
+  # Read and written rather than copied: cp would carry over a download's
+  # "from the internet" mark, and Chrome could not start the helper.
+  put_executable "$home/native-host.sh" "$(cat "$DIR/updater/native-host.sh")
+" || return 1
+  put_executable "$home/Update Quiz Answers.command" "#!/bin/bash
+# Opened by the \"Update now\" button of Quiz Answers, so that its update runs
+# just as a double-click on \"Update Quiz Answers\" in its folder would. Written
+# by that folder's updater, and rewritten each time it runs.
+export QUIZ_ANSWERS_REPORT=$(printf '%q' "$home/last-update")
+updater=$(printf '%q' "$DIR/updater/update.sh")
+# As the folder's own launcher does: opening it for real shows a refusal.
+if ! { : <\"\$updater\"; } 2>/dev/null; then
+  echo 'macOS did not let Terminal open the Quiz Answers folder. To allow it:'
+  echo 'Apple menu > System Settings > Privacy & Security > Files & Folders >'
+  echo 'Terminal, and turn on the folder Quiz Answers is in (Documents, Desktop'
+  echo 'or Downloads). Then click \"Update now\" again.'
+  printf '%s\n' 'Update failed: macOS did not let Terminal open the Quiz Answers folder.' '-- done --' >>\"\$QUIZ_ANSWERS_REPORT\"
+  read -r -p 'Press Return to close this window. ' _
+  exit 1
+fi
+exec /bin/bash \"\$updater\"
+" || return 1
+  while IFS= read -r dir; do
+    [ -n "$dir" ] && [ -d "$dir" ] || continue
+    mkdir -p "$dir/NativeMessagingHosts" 2>/dev/null || continue
+    write_helper_manifest "$dir/NativeMessagingHosts/$HELPER_NAME.json" "$home/native-host.sh" "$ids" 2>/dev/null || continue
+    registered=0
+  done < <(chrome_dirs)
+  return $registered
+}
+
+# Registers the helper, and says what that means for next time.
+announce_helper() {
+  if install_helper; then
+    say ''
+    say 'From now on Quiz Answers can update itself: when a new version is out,'
+    say 'click "Update now" in its window.'
+  fi
+}
+
 # True when $1 is a folder with anything in it.
 has_entries() {
   [ -d "$1" ] && [ -n "$(ls -A "$1" 2>/dev/null)" ]
@@ -96,6 +282,7 @@ discard() {
 # Only ever touches the scratch folders, and only once DIR has been confirmed
 # to be the Quiz Answers folder.
 cleanup() {
+  if [ -n "$LOCK" ] && [ "$(cat "$LOCK/pid" 2>/dev/null)" = "$$" ]; then rm -rf "$LOCK"; fi
   [ -n "$WORK" ] && rm -rf "$WORK"
   [ -n "$STAGING" ] && rm -rf "$STAGING"
   # Only an empty backup goes. Anything still in it is the only copy of an old
@@ -179,8 +366,35 @@ recover_interrupted_run() {
   RECOVERED=1
 }
 
+# One update of this folder at a time. Two at once would each take the other's
+# half-done swap for an interrupted run, and undo it - a double-click while the
+# Update now button's run is going, say. The lock is a folder, because making
+# one either works or finds it there, in one step. A lock whose run has gone -
+# a Mac switched off mid-update - is taken over.
+take_lock() {
+  local lock="$DIR/.update-lock" pid
+  if ! mkdir "$lock" 2>/dev/null; then
+    # Not there at all: the folder cannot be written, which the update says
+    # in a moment. Not a lock to wait for.
+    [ -d "$lock" ] || return 0
+    pid="$(cat "$lock/pid" 2>/dev/null)"
+    if [ -n "$(find "$lock" -maxdepth 0 -mmin +60 2>/dev/null)" ]; then
+      : # an hour old: whatever made it is long gone
+    elif [ -n "$pid" ] && kill -0 "$pid" 2>/dev/null; then
+      return 1
+    elif [ -z "$pid" ] && [ -z "$(find "$lock" -maxdepth 0 -mmin +1 2>/dev/null)" ]; then
+      return 1 # just made, by a run about to write its number into it
+    fi
+  fi
+  printf '%s\n' "$$" >"$lock/pid" 2>/dev/null || return 1
+  touch "$lock" 2>/dev/null # a lock taken over is as new as the run that holds it
+  LOCK="$lock"
+}
+
 main() {
   local latest entry name
+
+  trap report_end EXIT
 
   DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd -P)" || { say 'Could not find the Quiz Answers folder.'; pause; exit 1; }
 
@@ -203,17 +417,26 @@ main() {
   # once, so put it back now, whether or not there is anything to install.
   chmod +x "$DIR/Update Quiz Answers.command" 2>/dev/null || true
 
+  # Before anything that deletes: a run turned away here must not touch the
+  # scratch folders of the run that is going.
+  if ! take_lock; then
+    say ''
+    say 'Update failed: another update of Quiz Answers is running right now. Let it finish, then try again if you need to.'
+    pause
+    exit 1
+  fi
+
   # Only now, with DIR confirmed, is it safe to arm a trap that deletes things.
   STAGING="$DIR/.update-new"
   BACKUP="$DIR/.update-old"
   TRASH="$DIR/.update-trash"
-  trap cleanup EXIT
+  trap 'cleanup; report_end' EXIT
 
   if ! recover_interrupted_run; then
     say ''
-    say 'Update failed: the last update did not finish, and the files it moved'
-    say 'aside could not be put back. They are safe in the hidden ".update-old"'
-    say 'folder inside Quiz Answers. Nothing else was changed.'
+    say 'Update failed: the last update did not finish, and its files could not be put back.'
+    say 'They are safe in the hidden ".update-old" folder inside Quiz Answers.'
+    say 'Nothing else was changed.'
     pause
     exit 1
   fi
@@ -224,7 +447,8 @@ main() {
 
   WORK="$(mktemp -d "${TMPDIR:-/tmp}/quiz-answers-update.XXXXXX")" || fail 'could not create a temporary folder.'
   # GitHub answers with a redirect; never follow one off HTTPS.
-  curl -fsSL --proto-redir '=https' --retry 2 --connect-timeout 20 -o "$WORK/latest.zip" "$ZIP_URL" ||
+  # A download that stalls for a minute is given up on, not waited for forever.
+  curl -fsSL --proto-redir '=https' --retry 2 --connect-timeout 20 --speed-limit 1024 --speed-time 60 -o "$WORK/latest.zip" "$ZIP_URL" ||
     fail 'could not download the latest version. Check your internet connection and try again.'
 
   # Unpack beside the extension rather than in the temporary folder, so every
@@ -241,6 +465,7 @@ main() {
   if ! newer "$latest" "${CURRENT:-0}"; then
     say ''
     say "You already have the latest version ($CURRENT)."
+    announce_helper
     pause
     exit 0
   fi
@@ -276,6 +501,7 @@ main() {
   say 'the new version by itself; if it shows "Restart to finish", click that.'
   say 'Keep "Developer mode" on at chrome://extensions - Quiz Answers only runs'
   say 'while it is on.'
+  announce_helper
   pause
   exit 0
 }
