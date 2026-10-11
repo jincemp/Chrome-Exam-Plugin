@@ -71,10 +71,71 @@ export async function checkForUpdate({ force = false, now = Date.now(), fetchImp
   return { current, latest, available: !!latest && compareVersions(latest, current) > 0 };
 }
 
-/** The version of the files in the folder right now, which may not be the one running. */
-async function versionOnDisk() {
+/** The manifest in the folder right now, which may not be the one running. */
+async function manifestOnDisk() {
   const res = await fetch(chrome.runtime.getURL('manifest.json'), { cache: 'no-store' });
-  return (await res.json()).version;
+  return res.json();
+}
+
+/** A static import or re-export at the start of a line: import x from './a.js', import './b.js', export { c } from './c.js'. */
+const IMPORT_RE = /^[ \t]*(?:import|export)\b[^;'"]*?\bfrom\s*['"]([^'"]+)['"]|^[ \t]*import\s*['"]([^'"]+)['"]/gm;
+const SCRIPT_RE = /<script\b[^>]*\bsrc\s*=\s*['"]([^'"]+)['"]/gi;
+/** A runaway guard, far above the dozen files there are. */
+const MAX_FILES = 60;
+
+/**
+ * Could Chrome start the version on disk right now? That needs its service
+ * worker and every module that imports, and its popup and settings pages with
+ * theirs, all there and readable.
+ *
+ * A copy made by hand lands file by file, so the manifest can already name the
+ * new version while src/ is still arriving. Restarting at that moment leaves
+ * the background script dead until the next reload ("Service worker
+ * registration failed. Status code: 3"), so the restart waits for this.
+ * The double-click updater never gets here early: it changes the manifest last.
+ */
+export async function filesReady(manifest) {
+  const base = chrome.runtime.getURL('');
+  const worker = manifest?.background?.service_worker;
+  if (typeof worker !== 'string' || !worker) return false;
+  const pages = [manifest.action?.default_popup, manifest.options_ui?.page].filter((p) => typeof p === 'string');
+
+  const queue = [worker, ...pages].map((p) => new URL(p, base).href);
+  const seen = new Set();
+  while (queue.length) {
+    const url = queue.shift();
+    if (seen.has(url)) continue;
+    seen.add(url);
+    if (seen.size > MAX_FILES) return false;
+
+    let text;
+    try {
+      const res = await fetch(url, { cache: 'no-store' });
+      if (!res.ok) return false;
+      text = await res.text();
+    } catch {
+      return false; // missing, or not readable yet
+    }
+    if (!text.trim()) return false; // created, but not written yet
+
+    const found = url.endsWith('.html')
+      ? [...text.matchAll(SCRIPT_RE)].map((m) => m[1])
+      : [...text.matchAll(IMPORT_RE)].map((m) => m[1] || m[2]);
+    for (const spec of found) {
+      const next = new URL(spec, url).href;
+      if (next.startsWith(base)) queue.push(next); // only the extension's own files
+    }
+  }
+  return true;
+}
+
+/** True when the version on disk differs from the running one and could be started now. */
+export async function readyToRestart() {
+  try {
+    return (await pendingRestart()) !== null && (await filesReady(await manifestOnDisk()));
+  } catch {
+    return false;
+  }
 }
 
 /**
@@ -84,7 +145,7 @@ async function versionOnDisk() {
  */
 export async function pendingRestart() {
   try {
-    const onDisk = await versionOnDisk();
+    const onDisk = (await manifestOnDisk()).version;
     if (typeof onDisk !== 'string' || !onDisk) return null;
     return onDisk !== chrome.runtime.getManifest().version ? onDisk : null;
   } catch {
@@ -118,13 +179,22 @@ export async function requestRestart() {
 /**
  * Restart onto new files if there are any, at most once per version per
  * RESTART_RETRY_MS. Returns true when a restart was started.
+ *
+ * `onWaiting` is called when a new version is on disk but not all of it can be
+ * read yet - a copy still going on. That is not counted as an attempt, so
+ * asking again a moment later can still restart.
  */
-export async function restartIfUpdated({ now = Date.now() } = {}) {
+export async function restartIfUpdated({ now = Date.now(), onWaiting = () => {} } = {}) {
   const target = await pendingRestart();
   if (!target) return false;
 
   const { restartAttempt } = await chrome.storage.local.get('restartAttempt');
   if (restartAttempt?.version === target && now - restartAttempt.at < RESTART_RETRY_MS) return false;
+
+  if (!(await readyToRestart())) {
+    onWaiting(target);
+    return false;
+  }
 
   await chrome.storage.local.set({ restartAttempt: { version: target, at: now } });
   chrome.runtime.reload();

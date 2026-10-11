@@ -11,7 +11,7 @@
 import assert from 'node:assert/strict';
 import http from 'node:http';
 import path from 'node:path';
-import { cpSync, mkdtempSync, readFileSync, writeFileSync, rmSync } from 'node:fs';
+import { cpSync, mkdtempSync, readFileSync, renameSync, writeFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { fileURLToPath } from 'node:url';
 import { chromium } from 'playwright-core';
@@ -1214,6 +1214,66 @@ try {
   });
 
   await elsewhere.close();
+
+  /* ------------- 4. files copied in by hand: never restart onto half of them */
+
+  // Halfway through a copy made by hand: the new manifest has landed, but a
+  // module the worker imports has not. A restart now leaves Chrome with
+  // "Service worker registration failed. Status code: 3" and nothing running
+  // until someone reloads - as an owner found out.
+  await devPage.evaluate((id) => chrome.developerPrivate.deleteExtensionErrors({ extensionId: id }), extensionId).catch(() => {});
+  const aside = path.join(tmpdir(), `update-js-aside-${port}.js`);
+  renameSync(path.join(extDir, 'src', 'update.js'), aside);
+  installUpdate('99.0.3');
+
+  /** The version the running worker reports, or null if none answers. */
+  const liveVersion = async () => {
+    for (const w of context.serviceWorkers().filter((x) => x.url().includes(extensionId)).reverse()) {
+      try { return await w.evaluate(() => chrome.runtime.getManifest().version); } catch { /* gone */ }
+    }
+    return null;
+  };
+  const registrationErrors = async () => {
+    const info = await devPage.evaluate((id) => chrome.developerPrivate.getExtensionInfo(id), extensionId);
+    return [...(info.runtimeErrors || []), ...(info.manifestErrors || [])].map((e) => e.message)
+      .filter((m) => /registration failed|fetching the script/i.test(m));
+  };
+
+  const copyWake = context.waitForEvent('serviceworker', { timeout: 20000 }).catch(() => null);
+  await stopWorker();
+  const copyPage = await context.newPage();
+  await copyPage.goto(`${origin}/long.html`).catch(() => {});
+  await copyWake;
+  await new Promise((r) => setTimeout(r, 4000)); // more than one retry's worth
+  const midCopy = { version: await liveVersion(), errors: await registrationErrors() };
+
+  // "Restart to finish" in the same moment must not do it either.
+  const copyDriver = await context.newPage();
+  await copyDriver.goto(`chrome-extension://${extensionId}/options/options.html`);
+  const refusedMidCopy = await copyDriver.evaluate(() => chrome.runtime.sendMessage({ type: 'restart' })).catch((e) => ({ threw: e.message }));
+  await copyDriver.close();
+
+  check('while files are still being copied in, it does not restart onto them', () => {
+    assert.equal(midCopy.version, '99.0.2', `the extension restarted, or stopped running: ${JSON.stringify(midCopy)}`);
+    assert.deepEqual(midCopy.errors, [], 'Chrome recorded a failed start');
+    assert.equal(refusedMidCopy?.copying, true, `"Restart to finish" went ahead mid-copy: ${JSON.stringify(refusedMidCopy)}`);
+  });
+
+  // The copy finishes. Without anyone touching anything, it switches over.
+  renameSync(aside, path.join(extDir, 'src', 'update.js'));
+  let afterCopy = null;
+  for (let i = 0; i < 60 && afterCopy !== '99.0.3'; i++) {
+    await new Promise((r) => setTimeout(r, 250));
+    afterCopy = await liveVersion();
+  }
+  const afterCopyErrors = await registrationErrors();
+
+  check('once the copy is complete, it switches over by itself, and runs', () => {
+    assert.equal(afterCopy, '99.0.3', 'the extension did not pick up the completed copy');
+    assert.deepEqual(afterCopyErrors, []);
+  });
+
+  await copyPage.close();
   await devPage.close();
 } finally {
   await context.close();

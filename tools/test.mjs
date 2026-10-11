@@ -6,7 +6,7 @@
  */
 
 import assert from 'node:assert/strict';
-import { readFileSync } from 'node:fs';
+import { readFileSync, readdirSync, statSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import path from 'node:path';
 import { parseHTML } from 'linkedom';
@@ -47,7 +47,7 @@ const { parseQuestions, relaxCaps, parseResponsesPayload, parseChatPayload, clas
 const { formatAnswer, formatAll, sortAnswers } = await import('../src/format.js');
 const { ANSWER_SCHEMA, buildPrompt } = await import('../src/prompt.js');
 const { DEFAULT_SETTINGS, getSettings, isInsecureBase, migrate, pageKey } = await import('../src/storage.js');
-const { answersHeld, compareVersions, checkForUpdate, pendingRestart, requestRestart, restartIfUpdated, UPDATE_MANIFEST_URL } = await import('../src/update.js');
+const { answersHeld, compareVersions, checkForUpdate, filesReady, pendingRestart, requestRestart, restartIfUpdated, UPDATE_MANIFEST_URL } = await import('../src/update.js');
 
 /* ------------------------------------------------------- extractor harness */
 
@@ -936,10 +936,20 @@ await test('verify: the question-count guess is dropped on the second pass', asy
  * Runs fn with chrome.runtime / chrome.storage.local / fetch swapped for fakes,
  * and puts the shared stub back afterwards whatever happens.
  */
-async function withFakes({ running = '1.7.0', onDisk = running, stored = {} } = {}, fn) {
+/**
+ * The extension's own folder, as fetch(chrome.runtime.getURL(...)) sees it: a
+ * manifest naming `onDisk`, and a worker. `files` adds to or replaces those;
+ * undefined removes one, as if not copied in yet.
+ */
+async function withFakes({ running = '1.7.0', onDisk = running, stored = {}, files = {} } = {}, fn) {
   const saved = { runtime: chrome.runtime, local: chrome.storage.local, fetch: globalThis.fetch };
   const store = { ...stored };
   const reloads = [];
+  const disk = {
+    'manifest.json': JSON.stringify({ version: onDisk, background: { service_worker: 'src/background.js', type: 'module' } }),
+    'src/background.js': '// the worker\n',
+    ...files,
+  };
   chrome.runtime = {
     ...saved.runtime,
     getManifest: () => ({ version: running }),
@@ -951,12 +961,16 @@ async function withFakes({ running = '1.7.0', onDisk = running, stored = {} } = 
     set: async (patch) => Object.assign(store, patch),
   };
   globalThis.fetch = async (url) => {
-    if (!String(url).startsWith('chrome-extension://')) throw new Error(`unexpected fetch ${url}`);
-    if (onDisk instanceof Error) throw onDisk;
-    return { ok: true, json: async () => ({ version: onDisk }) };
+    const prefix = 'chrome-extension://test-id/';
+    if (!String(url).startsWith(prefix)) throw new Error(`unexpected fetch ${url}`);
+    const file = String(url).slice(prefix.length);
+    if (file === 'manifest.json' && onDisk instanceof Error) throw onDisk;
+    // Chrome answers a file that is not there with a failed fetch.
+    if (disk[file] === undefined) throw new TypeError('Failed to fetch');
+    return { ok: true, json: async () => JSON.parse(disk[file]), text: async () => disk[file] };
   };
   try {
-    return await fn({ store, reloads });
+    return await fn({ store, reloads, disk });
   } finally {
     chrome.runtime = saved.runtime;
     chrome.storage.local = saved.local;
@@ -1131,6 +1145,83 @@ await test('update: a restart request that cannot reach the worker reports failu
     assert.deepEqual(await requestRestart(), { ok: false, busy: true });
   } finally {
     chrome.runtime.sendMessage = saved;
+  }
+});
+
+await test('update: no restart while a file the worker imports is still being copied in', async () => {
+  // What a copy made by hand looks like halfway: the new manifest is there,
+  // a module the worker imports is not. Restarting now is what leaves Chrome
+  // with "Service worker registration failed. Status code: 3".
+  const files = { 'src/background.js': "import { x } from './update.js';\n", 'src/update.js': undefined };
+  await withFakes({ running: '1.7.0', onDisk: '1.8.0', files }, async ({ reloads, store, disk }) => {
+    const waiting = [];
+    assert.equal(await restartIfUpdated({ now: 0, onWaiting: (v) => waiting.push(v) }), false);
+    assert.equal(reloads.length, 0);
+    assert.deepEqual(waiting, ['1.8.0'], 'and it says it is waiting, so the worker looks again soon');
+    assert.equal(store.restartAttempt, undefined, 'waiting is not an attempt, or the loop guard would block the real one');
+
+    disk['src/update.js'] = 'export const x = 1;\n'; // the copy finishes
+    assert.equal(await restartIfUpdated({ now: 1000 }), true);
+    assert.equal(reloads.length, 1);
+  });
+});
+
+await test('update: the readiness check follows imports of imports, and the popup and settings pages', async () => {
+  const manifest = JSON.stringify({
+    version: '1.8.0', background: { service_worker: 'src/background.js' },
+    action: { default_popup: 'popup/popup.html' }, options_ui: { page: 'options/options.html' },
+  });
+  const whole = {
+    'manifest.json': manifest,
+    'src/background.js': "import {\n  a,\n  b,\n} from './openai.js';\n// import x from './not-a-real-file.js';\nimport './side.js';\n",
+    'src/openai.js': "export { c } from './prompt.js';\n",
+    'src/prompt.js': 'export const c = 1;\n',
+    'src/side.js': 'self.side = 1;\n',
+    'popup/popup.html': '<script type="module" src="popup.js"></script>',
+    'popup/popup.js': "import { a } from '../src/format.js';\n",
+    'src/format.js': 'export const a = 1;\n',
+    'options/options.html': '<script type="module" src="options.js"></script>',
+    'options/options.js': '// settings\n',
+  };
+  const m = JSON.parse(manifest);
+  await withFakes({ files: whole }, async () => assert.equal(await filesReady(m), true));
+  for (const missing of ['src/prompt.js', 'src/side.js', 'popup/popup.js', 'src/format.js', 'options/options.js']) {
+    await withFakes({ files: { ...whole, [missing]: undefined } }, async () => {
+      assert.equal(await filesReady(m), false, `${missing} missing should mean not ready`);
+    });
+  }
+  await withFakes({ files: { ...whole, 'src/prompt.js': '' } }, async () => {
+    assert.equal(await filesReady(m), false, 'a file created but not yet written is not ready');
+  });
+});
+
+await test('update: the readiness check finds every file the real extension needs', async () => {
+  // Against the real folder: any import the scanner missed would let a
+  // restart through with that file still on its way.
+  const real = {};
+  const walk = (dir) => {
+    for (const name of readdirSync(path.join(root, dir))) {
+      const rel = `${dir}/${name}`;
+      if (statSync(path.join(root, rel)).isDirectory()) walk(rel);
+      else real[rel] = readFileSync(path.join(root, rel), 'utf8');
+    }
+  };
+  for (const dir of ['src', 'popup', 'options']) walk(dir);
+  const manifest = JSON.parse(readFileSync(path.join(root, 'manifest.json'), 'utf8'));
+  const asked = new Set();
+  await withFakes({ files: { ...real, 'manifest.json': JSON.stringify(manifest) } }, async () => {
+    const fetchSeen = globalThis.fetch;
+    globalThis.fetch = (url, init) => { asked.add(String(url).replace('chrome-extension://test-id/', '')); return fetchSeen(url, init); };
+    assert.equal(await filesReady(manifest), true);
+  });
+  // Every module any of those files imports, by a plain search of the source.
+  const needed = new Set(['src/background.js', 'popup/popup.html', 'options/options.html']);
+  for (const [file, text] of Object.entries(real)) {
+    for (const m of text.matchAll(/^\s*import\b[^;]*?from\s*'([^']+)'/gm)) needed.add(path.posix.normalize(path.posix.join(path.posix.dirname(file), m[1])));
+  }
+  for (const file of needed) assert.ok(asked.has(file), `the readiness check never looked at ${file}`);
+  for (const file of ['src/openai.js', 'src/prompt.js', 'src/storage.js', 'src/update.js', 'popup/popup.js', 'options/options.js']) {
+    assert.ok(asked.has(file), `expected the check to read ${file}`);
   }
 });
 

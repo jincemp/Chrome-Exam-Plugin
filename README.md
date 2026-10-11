@@ -695,6 +695,13 @@ API credit is separate from a ChatGPT Plus subscription.
 mode…".** Developer mode was switched off. Switch it back on — see
 [Leave Developer mode on](#leave-developer-mode-on).
 
+**"Service worker registration failed. Status code: 3" under Errors.** Chrome
+restarted the extension while some of its files were missing - usually while
+an update was still being copied in. Once the copy has finished, click the
+reload arrow on the card, then **Errors** → **Clear all** (old entries stay
+listed after the cause is gone). From 1.8.1 the extension will not restart
+itself onto files that are not all there yet.
+
 **Nothing happens at all.** Open `chrome://extensions`, find Quiz Answers, click
 **service worker** to open its console, and look for errors. After editing any
 file, click the reload arrow on that card.

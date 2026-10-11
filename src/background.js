@@ -7,7 +7,7 @@
 
 import { answerQuestions, OpenAIError, TruncatedError } from './openai.js';
 import { clearJob, getJob, getSettings, pageKey, setJob } from './storage.js';
-import { answersHeld, restartIfUpdated } from './update.js';
+import { answersHeld, readyToRestart, restartIfUpdated } from './update.js';
 
 /*
  * A whole page in one request wherever it fits. Splitting is not free accuracy-
@@ -575,6 +575,11 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
           sendResponse({ ok: false, busy: true });
           return;
         }
+        // Still being copied in: restarting now would leave nothing running.
+        if (!(await readyToRestart())) {
+          sendResponse({ ok: false, copying: true });
+          return;
+        }
         sendResponse({ ok: true });
         // A moment for the reply to arrive before this worker goes away.
         setTimeout(() => chrome.runtime.reload(), 100);
@@ -700,7 +705,28 @@ async function restartIfUpdatedWhenIdle() {
     if (open.length) return;
   } catch { /* getContexts needs Chrome 116, which the manifest already requires */ }
   if (await answersHeld()) return;
-  await restartIfUpdated();
+  let waiting = false;
+  await restartIfUpdated({ onWaiting: () => { waiting = true; } });
+  if (waiting) retrySoon();
+  else waitingSince = 0;
+}
+
+/*
+ * A new version is on disk but not all of it can be read yet - someone is
+ * copying it in by hand. Look again shortly, for a couple of minutes; after
+ * that the next start of this worker looks again anyway.
+ */
+const RETRY_EVERY_MS = 3000;
+const RETRY_FOR_MS = 2 * 60 * 1000;
+let waitingSince = 0;
+let retryTimer = null;
+function retrySoon() {
+  if (!waitingSince) waitingSince = Date.now();
+  if (retryTimer || Date.now() - waitingSince > RETRY_FOR_MS) return;
+  retryTimer = setTimeout(() => {
+    retryTimer = null;
+    restartIfUpdatedWhenIdleSoon();
+  }, RETRY_EVERY_MS);
 }
 
 function restartIfUpdatedWhenIdleSoon() {

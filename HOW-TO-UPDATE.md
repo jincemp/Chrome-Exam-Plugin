@@ -259,6 +259,13 @@ The new files went into a different folder. Go back to
 [Step 1](#step-1-open-the-folder-chrome-uses) and use the window that opens
 when you click **Loaded from**. That is the folder to paste into.
 
+**The Quiz Answers box has an "Errors" button, saying "Service worker
+registration failed", and Get answers does nothing.** Chrome restarted it
+while the new files were still being copied. Make sure the copying has
+finished (no progress bar, no question waiting in another window), then click
+the **round arrow** on the box. Then click **Errors** and **Clear all**. Old
+messages stay in that list even after the problem is fixed.
+
 **I clicked "Keep Both" by mistake.** Nothing is broken. Do
 [Step 4](#step-4-copy-the-new-files-into-the-old-folder) again, and this time
 click **Replace**. Afterwards you may see extra items ending in "copy" or

@@ -200,9 +200,12 @@ async function send(message) {
 async function restart() {
   const res = await requestRestart();
   // On success this page closes with the restart, so only a refusal is left to show.
-  if (res?.busy) {
-    $('update-text').textContent = 'Answers are still being worked on. Restart once they are done.';
-    $('update-action').hidden = true;
+  const why = res?.busy ? 'Answers are still being worked on. Restart once they are done.'
+    : res?.copying ? 'The new files are still being copied into the folder. Try again in a moment.'
+      : '';
+  if (why) {
+    $('update-text').textContent = why;
+    $('update-action').hidden = !res.copying; // "try again" is the same button
     $('update').hidden = false;
   }
 }

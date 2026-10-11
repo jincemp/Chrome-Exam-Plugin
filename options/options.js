@@ -99,6 +99,9 @@ async function showUpdate() {
       if (res?.busy) {
         $('update-status-text').textContent =
           `Version ${installed} is installed. Answers are still being worked on in a tab - restart once they are done.`;
+      } else if (res?.copying) {
+        $('update-status-text').textContent =
+          `Version ${installed} is still being copied into the folder. Try again in a moment.`;
       }
     };
     $('update-status').hidden = false;
