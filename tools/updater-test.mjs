@@ -165,7 +165,12 @@ function runUpdater(ext, env = {}, cmd = engine.cmd) {
 function runHelper(ext, message, env = {}) {
   return new Promise((resolve) => {
     const [bin, args] = engine.cmd(path.join(ext, 'updater', engine.helper));
-    const child = spawn(bin, args, { env: { ...process.env, QUIZ_ANSWERS_ZIP_URL: ZIP_URL, ...env }, stdio: ['pipe', 'pipe', 'pipe'] });
+    // Where Chrome starts it: in the helper's own folder.
+    const child = spawn(bin, args, {
+      cwd: path.join(ext, 'updater'),
+      env: { ...process.env, QUIZ_ANSWERS_ZIP_URL: ZIP_URL, ...env },
+      stdio: ['pipe', 'pipe', 'pipe'],
+    });
     const chunks = [];
     let err = '';
     child.stdout.on('data', (d) => chunks.push(d));
@@ -475,7 +480,10 @@ await test('a run registers the "Update now" helper, for this copy only', async 
   assert.equal(m.type, 'stdio');
   assert.match(m.path.replace(/\\/g, '/'), new RegExp(`/updater/native-host\\.${engine.label === 'mac' ? 'sh' : 'bat'}$`));
   assert.ok(m.path.replace(/\\/g, '/').startsWith(realpathSync(ext)), `the helper must be the one in this folder: ${m.path}`);
-  assert.deepEqual(m.allowed_origins, [`chrome-extension://${extensionIdOf(ext)}/`], 'only this copy of Quiz Answers may start it');
+  assert.ok(m.allowed_origins.includes(`chrome-extension://${extensionIdOf(ext)}/`), `Chrome's ID for this copy is missing: ${m.allowed_origins}`);
+  // Spare spellings of this copy's own path at most: never another extension.
+  assert.ok(m.allowed_origins.length <= 3 && new Set(m.allowed_origins).size === m.allowed_origins.length, String(m.allowed_origins));
+  for (const o of m.allowed_origins) assert.match(o, /^chrome-extension:\/\/[a-p]{32}\/$/);
   if (engine.label === 'mac') assert.ok(statSync(m.path).mode & 0o100, 'Chrome can only start an executable helper');
 });
 
@@ -518,6 +526,24 @@ await test('a failed update through the helper comes back as a failure, with the
   assert.equal(extra, 0);
   assert.deepEqual(snapshot(ext), before);
 });
+
+if (engine.label === 'windows') {
+  await test('the helper runs the update from outside the folder it replaces', async () => {
+    // Chrome starts the helper inside updater\, and Windows will not rename a
+    // folder that a program is working in - so an update run from there
+    // would fail on every PC. A stand-in updater reports where it ran.
+    const ext = installed('1.7.0');
+    const report = path.join(scratch, `ran-in-${passed}.txt`);
+    writeFileSync(path.join(ext, 'updater', 'update.ps1'), [
+      `Set-Content -LiteralPath $env:QUIZ_ANSWERS_REPORT -Value ([Environment]::CurrentDirectory)`,
+      `Write-Host 'Updated Quiz Answers from 1.7.0 to 9.9.9.'`,
+    ].join('\n'));
+    const { reply, err } = await runHelper(ext, { type: 'update' }, { QUIZ_ANSWERS_REPORT: report });
+    assert.equal(reply?.ok, true, `${JSON.stringify(reply)}\n${err}`);
+    const ranIn = readFileSync(report, 'utf8').trim();
+    assert.ok(!path.resolve(ranIn).startsWith(realpathSync(ext)), `the update ran inside the extension folder: ${ranIn}`);
+  });
+}
 
 await test('the helper ignores anything that is not a proper message', async () => {
   const ext = installed('1.7.0');

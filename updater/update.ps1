@@ -238,9 +238,43 @@ function Get-ExtensionId([string]$path) {
   $hash = [Security.Cryptography.SHA256]::Create().ComputeHash($bytes)
   $id = ''
   foreach ($b in $hash[0..15]) {
-    $id += [char](97 + ($b -shr 4)) + [char](97 + ($b -band 15))
+    $id += [string][char](97 + ($b -shr 4)) + [string][char](97 + ($b -band 15))
   }
   return $id
+}
+
+# The folder as Chrome's folder picker gives it: every name spelled as it is
+# on disk, and long names rather than 8.3 ones such as QUIZAN~1. Chrome follows
+# no junctions or links, so neither does this.
+function Get-OnDiskPath([string]$path) {
+  try {
+    $full = [IO.Path]::GetFullPath($path)
+    $root = [IO.Path]::GetPathRoot($full)
+    $cur = $root
+    foreach ($part in $full.Substring($root.Length).Split([char[]]@('\', '/'), [StringSplitOptions]::RemoveEmptyEntries)) {
+      $name = $part
+      try {
+        $hit = @(([IO.DirectoryInfo]$cur).GetDirectories($part)) | Select-Object -First 1
+        if ($hit) { $name = $hit.Name }
+      } catch { }
+      $cur = [IO.Path]::Combine($cur, $name)
+    }
+    return $cur
+  } catch {
+    return $path
+  }
+}
+
+# The IDs Chrome may have given this copy: from the path as this script was
+# started, and as Chrome's folder picker would spell it. A spare ID does no
+# harm, and a missing one means no button, so both are listed.
+function Get-ExtensionIds([string]$path) {
+  $ids = New-Object System.Collections.ArrayList
+  foreach ($p in @($path, (Get-OnDiskPath $path))) {
+    $id = Get-ExtensionId $p
+    if (-not $ids.Contains($id)) { [void]$ids.Add($id) }
+  }
+  return ,$ids.ToArray()
 }
 
 # Registers updater\native-host.bat with Chrome, for this copy of Quiz Answers
@@ -254,7 +288,7 @@ function Install-Helper {
     if (-not (Test-Path -LiteralPath $helper)) { return $false }
     try { Unblock-File -LiteralPath $helper -ErrorAction SilentlyContinue } catch { }
     try { Unblock-File -LiteralPath (Join-Path $script:Dir 'updater\native-host.ps1') -ErrorAction SilentlyContinue } catch { }
-    $id = Get-ExtensionId $script:Dir
+    $origins = @(Get-ExtensionIds $script:Dir | ForEach-Object { "chrome-extension://$_/" })
     # QUIZ_ANSWERS_NATIVE_DIR is a test hook; Windows has no folder Chrome
     # searches, only the registry entry that names this file.
     $where = if ($env:QUIZ_ANSWERS_NATIVE_DIR) { $env:QUIZ_ANSWERS_NATIVE_DIR } else { Join-Path $env:LOCALAPPDATA 'Quiz Answers' }
@@ -265,7 +299,7 @@ function Install-Helper {
       description = 'Quiz Answers: updates itself when its Update now button is pressed'
       path = $helper
       type = 'stdio'
-      allowed_origins = @("chrome-extension://$id/")
+      allowed_origins = $origins
     }
     [IO.File]::WriteAllText($file, ($manifest | ConvertTo-Json), (New-Object Text.UTF8Encoding $false))
     if ($script:OnWindows -and -not $env:QUIZ_ANSWERS_NATIVE_DIR) {

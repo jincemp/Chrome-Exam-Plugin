@@ -9,6 +9,7 @@
 # order mark as the local code page.
 
 $ErrorActionPreference = 'Stop'
+$ProgressPreference = 'SilentlyContinue'
 $HelperVersion = 1
 $MaxMessage = 4096
 
@@ -44,10 +45,13 @@ function Write-Message([string]$json) {
 
 # Runs update.ps1 as its own process, with its own input and output, so nothing
 # it prints can reach Chrome's pipe. Returns @(exit code, everything it printed).
+# It works from the temporary folder: Windows will not rename a folder some
+# program is working in, and the update has to rename this one.
 function Invoke-Updater {
   $psi = New-Object System.Diagnostics.ProcessStartInfo
   $psi.FileName = [System.Diagnostics.Process]::GetCurrentProcess().MainModule.FileName
   $psi.Arguments = '-NoProfile -NonInteractive -ExecutionPolicy Bypass -File "' + (Join-Path $PSScriptRoot 'update.ps1') + '"'
+  $psi.WorkingDirectory = [IO.Path]::GetTempPath()
   $psi.UseShellExecute = $false
   $psi.CreateNoWindow = $true
   $psi.RedirectStandardInput = $true

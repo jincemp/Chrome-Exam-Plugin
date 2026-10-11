@@ -97,8 +97,8 @@ json_string() {
   printf '"%s"' "$s"
 }
 
-# The ID Chrome gives an extension loaded unpacked from folder $1: the first
-# half of the SHA-256 of its path, written with the letters a to p.
+# The ID Chrome gives an extension loaded unpacked from the path $1: the first
+# half of the path's SHA-256, written with the letters a to p.
 extension_id() {
   local sum
   if command -v shasum >/dev/null 2>&1; then
@@ -109,6 +109,22 @@ extension_id() {
   printf '%s' "${sum:0:32}" | tr '0-9a-f' 'a-p'
 }
 
+# The IDs Chrome may have given this copy, one per line. Chrome hashes the
+# folder's real path, as realpath(3) gives it: links followed and every name
+# spelled as it is on disk. /bin/realpath and /bin/pwd ask the system for that
+# spelling; bash's own pwd keeps whatever case the path was typed in. A spare
+# ID does no harm, and a missing one means no button, so all of them are listed.
+extension_ids() {
+  local p
+  {
+    printf '%s\n' "$1"
+    (cd "$1" 2>/dev/null && /bin/pwd -P 2>/dev/null)
+    if [ -x /bin/realpath ]; then /bin/realpath "$1" 2>/dev/null; fi
+  } | while IFS= read -r p; do
+    if [ -n "$p" ]; then extension_id "$p"; echo; fi
+  done | awk 'NF && !seen[$0]++'
+}
+
 # Chrome's own folders on this computer, one per line. The helper is
 # registered in each one that exists.
 chrome_dirs() {
@@ -117,22 +133,27 @@ chrome_dirs() {
     return
   fi
   case "$(uname -s)" in
-    Darwin) printf '%s\n' "$HOME/Library/Application Support/Google/Chrome" "$HOME/Library/Application Support/Chromium" ;;
+    Darwin)
+      local support="$HOME/Library/Application Support"
+      printf '%s\n' "$support/Google/Chrome" "$support/Google/Chrome Beta" "$support/Google/Chrome Dev" \
+        "$support/Google/Chrome Canary" "$support/Chromium"
+      ;;
     *) printf '%s\n' "$HOME/.config/google-chrome" "$HOME/.config/chromium" ;;
   esac
 }
 
 # Writes the small file that tells Chrome where the helper is, and that only
-# this copy of Quiz Answers may start it.
+# this copy of Quiz Answers may start it. $3 is its IDs, one per line.
 write_helper_manifest() {
-  local file="$1" helper="$2" id="$3"
+  local file="$1" helper="$2" id origins=''
+  for id in $3; do origins="$origins${origins:+, }\"chrome-extension://$id/\""; done
   {
     printf '{\n'
     printf '  "name": "%s",\n' "$HELPER_NAME"
     printf '  "description": "Quiz Answers: updates itself when its Update now button is pressed",\n'
     printf '  "path": %s,\n' "$(json_string "$helper")"
     printf '  "type": "stdio",\n'
-    printf '  "allowed_origins": ["chrome-extension://%s/"]\n' "$id"
+    printf '  "allowed_origins": [%s]\n' "$origins"
     printf '}\n'
   } >"$file"
 }
@@ -143,18 +164,19 @@ write_helper_manifest() {
 # if there was nowhere to register it (no Chrome found) - that only means no
 # button, and the double-click still works.
 install_helper() {
-  local helper="$DIR/updater/native-host.sh" id dir registered=1
+  local helper="$DIR/updater/native-host.sh" ids dir registered=1
   [ -f "$helper" ] || return 1
   chmod +x "$helper" 2>/dev/null
   # Chrome starts the helper itself, and a download's "from the internet" mark
   # would only stand in its way. This is the person's own copy, which they
   # have just chosen to update.
   xattr -d com.apple.quarantine "$helper" 2>/dev/null
-  id="$(extension_id "$DIR")"
+  ids="$(extension_ids "$DIR")"
+  [ -n "$ids" ] || return 1
   while IFS= read -r dir; do
     [ -n "$dir" ] && [ -d "$dir" ] || continue
     mkdir -p "$dir/NativeMessagingHosts" 2>/dev/null || continue
-    write_helper_manifest "$dir/NativeMessagingHosts/$HELPER_NAME.json" "$helper" "$id" 2>/dev/null || continue
+    write_helper_manifest "$dir/NativeMessagingHosts/$HELPER_NAME.json" "$helper" "$ids" 2>/dev/null || continue
     registered=0
   done < <(chrome_dirs)
   return $registered

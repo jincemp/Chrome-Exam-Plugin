@@ -1325,7 +1325,7 @@ try {
   check('the double-click registers the helper under the ID Chrome really uses', () => {
     assert.equal(setup.code, 0, setup.out);
     assert.match(setup.out, /click "Update now"/);
-    assert.deepEqual(registered?.allowed_origins, [`chrome-extension://${extensionId}/`], `computed ${computedId}, Chrome uses ${extensionId}`);
+    assert.ok(registered?.allowed_origins?.includes(`chrome-extension://${extensionId}/`), `computed ${registered?.allowed_origins} (${computedId}), Chrome uses ${extensionId}`);
   });
 
   installUpdate(installedNow); // keep "published" in step with the folder

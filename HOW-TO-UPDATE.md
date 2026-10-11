@@ -1,12 +1,14 @@
 # How to update Quiz Answers
 
-It takes about five minutes. You do not need to install anything, and **your
-API key and settings stay exactly as they are**.
+Once it is set up, updating Quiz Answers is one click. Getting there takes a few
+minutes, once. You do not need to install anything, and **your API key stays
+exactly as it is**, so you will not have to set anything up again.
 
 Keep this guide open next to Chrome, and do one step at a time. Every step has
-a picture of what you will see. Pictures marked **Example** are drawings, and
-your screen may look a little different, but the words and buttons are the
-same.
+a picture of what you will see. Pictures marked **Example** are drawings: your
+screen may look a little different, but the buttons you need to click have the
+same names. The orange rings and labels show you where to click. They are not
+on your screen.
 
 <!-- web-only -->
 > Prefer paper? Here is the same guide as a PDF you can print or send on:
@@ -20,155 +22,195 @@ same.
 1. In Chrome, click the address bar at the top, type `chrome://extensions`
    and press **Enter** (**Return** on a Mac).
 2. Find the **Quiz Answers** box. The number next to the name is your version.
+   (No number, and the box says **Turn on developer mode**? Switch
+   **Developer mode** on at the top right first.)
 
 <img src="docs/how-to-update/a1-version.png" width="640" alt="Chrome's Extensions page. The Quiz Answers box shows the version number 1.7.0 next to its name.">
 
 **What does yours say?**
 
-- **1.8.0 or higher** → skip to [The easy way](#the-easy-way-version-180-or-higher).
-  It is a double-click.
-- **Lower than 1.8.0** (for example 1.7.0 or 1.5.1) → do
-  [The one-time update](#the-one-time-update-versions-below-180) just below.
-  You only ever do this once. After it, you can use the easy way.
+- **1.9.0 or higher** → go to
+  [C. Every update after that: one click](#c-every-update-after-that-one-click).
+- **1.8.0 or 1.8.1** → go to
+  [B. Switch on the Update button](#b-switch-on-the-update-button-once). It is
+  one double-click.
+- **Lower than 1.8.0** (for example 1.7.0 or 1.5.1) → start with
+  [A. The one-time update](#a-the-one-time-update-versions-below-180) just
+  below, then do B.
+
+You only ever do A and B once. After that, it is always C.
 
 ---
 
-## The one-time update (versions below 1.8.0)
+## A. The one-time update (versions below 1.8.0)
 
-### Step 1. Open the folder Chrome uses
+This one time, you copy the new version into the folder Chrome uses by hand.
 
-1. On the Quiz Answers box, click **Details**.
+### Step 1. Find the folder Chrome uses
+
+You are still on `chrome://extensions`.
+
+1. On the Quiz Answers box, click **Details**. (Never **Remove**: that deletes
+   your API key.)
 
    <img src="docs/how-to-update/a2-details.png" width="640" alt="The Quiz Answers box, with the Details button ringed.">
 
-2. Scroll down to **Source**. Next to **Loaded from** is the folder's
-   location. **Click it.** (On Windows it starts with `~\` instead of `~/`.)
-
-   <img src="docs/how-to-update/a3-loaded-from.png" width="640" alt="The Details page, scrolled down to Source. The path after 'Loaded from:' is ringed.">
-
-3. A folder window opens. This is the extension's folder, and it is the
-   only one that matters. **Leave this window open.**
-
-   **On a Mac:**
-
-   <img src="docs/how-to-update/mac-old-folder.png" width="520" alt="Example of a Finder window named Chrome-Exam-Plugin-main, showing folders such as icons, popup and src, and a file called manifest.json.">
-
-   **On Windows:**
-
-   <img src="docs/how-to-update/win-old-folder.png" width="520" alt="Example of a File Explorer window named Chrome-Exam-Plugin-main, listing folders such as icons, popup and src, and manifest.json.">
+2. Scroll down to **Source**. Next to **Loaded from** is the location of the
+   folder Chrome uses. You will click it in Step 4. **Leave this page open.**
 
 ### Step 2. Download the new version
 
-1. Open this page: **https://github.com/jincemp/Chrome-Exam-Plugin**
-2. Click the green **Code** button, then click **Download ZIP**.
+1. Open a **new tab**: click the **+** next to your tabs, at the top of Chrome.
+   (The Details page stays open in its own tab.)
+2. In the new tab, open this page: **https://github.com/jincemp/Chrome-Exam-Plugin**
+3. Click the green **Code** button, then click **Download ZIP**.
 
 <img src="docs/how-to-update/github-download.png" width="560" alt="Example of the project page on GitHub. The green Code button is ringed and marked 1, and Download ZIP in the menu below it is ringed and marked 2.">
 
 A file called `Chrome-Exam-Plugin-main.zip` goes into your **Downloads**
-folder. (If you have downloaded it before, the new one may be called
-`Chrome-Exam-Plugin-main (1).zip`. Use the newest one.)
+folder. If you have downloaded it before, the new one may be called
+`Chrome-Exam-Plugin-main (1).zip`: always use the one with the highest number.
 
-### Step 3. Unzip it
-
-**On a Mac:**
-
-Open your **Downloads** folder and double-click `Chrome-Exam-Plugin-main.zip`.
-A folder with the same name appears next to it. **Double-click that folder to
-open it.**
-
-<img src="docs/how-to-update/mac-unzip.png" width="520" alt="Example of the Downloads folder in Finder, with the zip file and, next to it, the new Chrome-Exam-Plugin-main folder ringed.">
-
-**On Windows:**
-
-1. In **Downloads**, right-click `Chrome-Exam-Plugin-main.zip` and choose
-   **Properties**. At the bottom, tick **Unblock**, then click **OK**. (No
-   Unblock box? Just skip this.)
-
-   <img src="docs/how-to-update/win-unblock.png" width="420" alt="Example of the zip file's Properties window. The Unblock tick box at the bottom is ringed and marked 1, and the OK button is marked 2.">
-
-2. Right-click the zip again and choose **Extract All…**, then click
-   **Extract**.
-
-   <img src="docs/how-to-update/win-extract.png" width="560" alt="Example of the right-click menu with Extract All ringed, and the window that follows with its Extract button ringed.">
-
-3. A new folder opens. If you see another folder called
-   `Chrome-Exam-Plugin-main` inside it, open that one too. Stop when you can
-   see `manifest.json`.
-
-> **Check:** you now have **two** folder windows open: the **old** one from
-> Step 1, and this **new** one. Both contain `manifest.json`. The new one is in
-> **Downloads**. (If your old folder is in Downloads too, the new one is called
-> `Chrome-Exam-Plugin-main 2`.)
-
-### Step 4. Copy the new files into the old folder
+### Step 3. Unzip it, and copy everything in it
 
 **On a Mac:**
 
-1. Click an empty spot inside the **new** folder window. In the menu bar at the very top of
-   the screen, click **Edit → Select All**, then **Edit → Copy**.
+1. Click the Finder icon in the Dock (the blue and white face at the bottom of
+   the screen). In the window that opens, click **Downloads** on the left.
+2. Double-click the zip you just downloaded. A new folder appears next to it,
+   called `Chrome-Exam-Plugin-main`. (If a folder with that name was there
+   already, the new one is called `Chrome-Exam-Plugin-main 2`.)
+   **Double-click the new folder to open it.**
+
+   <img src="docs/how-to-update/mac-unzip.png" width="520" alt="Example of the Downloads folder in Finder, with the zip file and, next to it, the new Chrome-Exam-Plugin-main folder ringed.">
+
+   (Downloaded with Safari instead of Chrome? Safari unzips by itself, so
+   there is no zip, just the folder. Open that folder.)
+
+3. **Check:** the new folder has a file called **Update Quiz Answers.command**
+   in it. Not there? You opened an old download. Go back to Step 2.
+
+   <img src="docs/how-to-update/mac-new-folder.png" width="520" alt="Example of the new folder in Finder. The file Update Quiz Answers.command is ringed, labelled: This file means it is the new version.">
+
+4. Click an empty spot in the folder window. In the menu bar at the very top
+   of the screen, click **Edit → Select All**, then **Edit → Copy**.
    (Or press <kbd>⌘</kbd><kbd>A</kbd>, then <kbd>⌘</kbd><kbd>C</kbd>.)
 
    <img src="docs/how-to-update/mac-copy.png" width="520" alt="Example of the new folder in Finder with everything selected, and the Edit menu open. Select All is marked 1, and Copy is marked 2.">
 
-2. Click an empty spot inside the **old** folder window, the one from Step 1.
-   Click **Edit → Paste**. (Or press <kbd>⌘</kbd><kbd>V</kbd>.)
+**On Windows:**
 
-   <img src="docs/how-to-update/mac-paste.png" width="520" alt="Example of the old folder in Finder, its path ending in Chrome Extensions, with Paste ringed in the Edit menu.">
+1. Open File Explorer: hold down the Windows key and press <kbd>E</kbd>. Click
+   **Downloads** on the left.
+2. Right-click the zip you just downloaded and choose **Properties**. (Windows
+   may hide the `.zip` at the end of the name: it is the one with a zipper on
+   its icon.) At the bottom, tick **Unblock**, then click **OK**. (No Unblock
+   box? Just skip this.)
 
-3. A question appears. **Tick "Apply to All"**, then click **Replace**.
+   <img src="docs/how-to-update/win-unblock.png" width="420" alt="Example of the zip file's Properties window. The Unblock tick box at the bottom is ringed and marked 1, and the OK button is marked 2.">
+
+3. Right-click the zip again and choose **Extract All…**, then click
+   **Extract**. (If a box asks whether to replace or skip files, click
+   **Replace the files in the destination**.)
+
+   <img src="docs/how-to-update/win-extract.png" width="560" alt="Example of the right-click menu with Extract All ringed, and the window that follows with its Extract button ringed.">
+
+4. A new folder opens. If you see another folder called
+   `Chrome-Exam-Plugin-main` inside it, open that one too.
+   **Check:** you can see **Update Quiz Answers** in it. Not there? You opened
+   an old download. Go back to Step 2.
+
+   <img src="docs/how-to-update/win-new-folder.png" width="520" alt="Example of the new folder in File Explorer. Update Quiz Answers is ringed, labelled: This file means it is the new version.">
+
+5. Click an empty white space below the files (not in the column on the
+   left). Hold down <kbd>Ctrl</kbd> and press <kbd>A</kbd>: everything turns
+   blue. Then hold down <kbd>Ctrl</kbd> and press <kbd>C</kbd>.
+
+   <img src="docs/how-to-update/win-copy.png" width="520" alt="Example of the new folder in File Explorer with everything selected. Below it: 1. Hold Ctrl and press A. 2. Hold Ctrl and press C.">
+
+### Step 4. Paste them into the folder Chrome uses
+
+1. Go back to Chrome and click the tab with the Details page. Click the
+   folder location next to **Loaded from**. (On Windows it starts with `~\`
+   instead of `~/`.)
+
+   <img src="docs/how-to-update/a3-loaded-from.png" width="640" alt="The Details page, scrolled down to Source. The path after 'Loaded from:' is ringed.">
+
+2. A folder window opens. **This is the folder Chrome uses.** (Does it already
+   have **Update Quiz Answers** in it? Then the new files are already in. Do
+   not paste: skip to Step 5.)
+
+**On a Mac:**
+
+3. Click an empty spot in that folder window. Click **Edit → Paste**. (Or
+   press <kbd>⌘</kbd><kbd>V</kbd>.)
+
+   <img src="docs/how-to-update/mac-paste.png" width="520" alt="Example of the folder Chrome uses, in Finder, with Paste ringed in the Edit menu.">
+
+4. A question appears. **Tick "Apply to All"**, then click **Replace**.
 
    <img src="docs/how-to-update/mac-replace.png" width="420" alt="Example of the question: An item named icons already exists in this location. Apply to All is ticked and marked 1, and Replace is marked 2. Keep Both is marked Never this.">
 
-   > ⚠️ **Never click "Keep Both".** It leaves the old version in place, and
-   > nothing gets updated. If you clicked it by mistake, see
-   > [Something went wrong?](#something-went-wrong).
+   > ⚠️ **Never click "Keep Both".** It leaves the old version in place.
 
 **On Windows:**
 
-1. Click an empty spot inside the **new** folder window. Press <kbd>Ctrl</kbd>+<kbd>A</kbd>
-   (this selects everything), then <kbd>Ctrl</kbd>+<kbd>C</kbd> (this copies it).
+3. Click an empty white space in that folder window. Hold down
+   <kbd>Ctrl</kbd> and press <kbd>V</kbd>.
 
-   <img src="docs/how-to-update/win-copy.png" width="520" alt="Example of the new folder in File Explorer with everything selected, with the keys Ctrl+A marked 1 and Ctrl+C marked 2.">
+   <img src="docs/how-to-update/win-paste.png" width="520" alt="Example of the folder Chrome uses, in File Explorer. Below it: Click an empty spot, then hold Ctrl and press V.">
 
-2. Click an empty spot inside the **old** folder window, the one from Step 1.
-   Press <kbd>Ctrl</kbd>+<kbd>V</kbd>.
-3. A question appears. Click **Replace the files in the destination**.
+4. A question appears. Click **Replace the files in the destination**.
 
    <img src="docs/how-to-update/win-replace.png" width="440" alt="Example of the Replace or Skip Files window, with 'Replace the files in the destination' ringed.">
 
+   > ⚠️ **Never click "Skip these files".** It leaves the old version in place.
+
+No question appeared? Then the files went into a different folder. That does
+no harm: click the location next to **Loaded from** again, and paste into the
+window that opens.
+
 ### Step 5. Tell Chrome
 
-1. Go back to the `chrome://extensions` tab in Chrome.
-2. On the Quiz Answers box, click the **round arrow**.
+1. In Chrome, click the address bar, type `chrome://extensions` and press
+   **Enter** (**Return** on a Mac), just as at the start.
+2. On the Quiz Answers box, click its **round arrow**. (Not Chrome's own round
+   arrow, next to the address bar.)
 
    <img src="docs/how-to-update/a5-reload.png" width="640" alt="The Quiz Answers box, with the round reload arrow at the bottom right ringed.">
 
-3. The number next to the name changes to the new version: **1.8.0 or
+3. The number next to the name changes to the new version: **1.9.0 or
    higher**.
 
-   <img src="docs/how-to-update/a6-new-version.png" width="640" alt="The Quiz Answers box, now showing version 1.8.0.">
+   <img src="docs/how-to-update/a6-new-version.png" width="640" alt="The Quiz Answers box, now showing the new version number.">
 
-✅ **Done!** Your API key and settings are all still there. From now on, use
-[the easy way](#the-easy-way-version-180-or-higher) to update. The number
-did not change? See [Something went wrong?](#something-went-wrong).
+✅ **The new version is in**, and your API key is still there. You can delete
+the zip and the folder you unzipped in Step 3, but never the folder that opens
+from **Loaded from**. The number did not change? See
+[Something went wrong?](#something-went-wrong)
+
+**One more thing, once:** do
+[B. Switch on the Update button](#b-switch-on-the-update-button-once) now.
+Then you never have to copy files again.
 
 ---
 
-## The easy way (version 1.8.0 or higher)
+## B. Switch on the Update button (once)
 
-### Step 1. See that there is an update, and open the folder
+Do this if you have version 1.8.0 or 1.8.1, or straight after A. You
+double-click one file, once. It also installs the newest version, if you do not
+have it yet. Afterwards, Quiz Answers has an **Update now** button.
 
-1. Click the Quiz Answers icon in Chrome's toolbar. When a new version is
-   out, the bottom of the box tells you so. Click **Where is the folder?**
+### Step 1. Open the folder Chrome uses
 
-   <img src="docs/how-to-update/b1-popup-new-version.png" width="340" alt="The Quiz Answers box, saying: Version 1.9.0 is out. To get it, double-click Update Quiz Answers in the extension's folder. 'Where is the folder?' is ringed.">
-
-2. Chrome opens the extension's Details page. Scroll down and click the
-   folder path next to **Loaded from**, just as in this picture:
+1. In Chrome, click the address bar, type `chrome://extensions` and press
+   **Enter** (**Return** on a Mac).
+2. On the Quiz Answers box, click **Details** (never **Remove**). Scroll down
+   to **Source**, and click the folder location next to **Loaded from**.
 
    <img src="docs/how-to-update/a3-loaded-from.png" width="560" alt="The Details page, scrolled down to Source, with the path after 'Loaded from:' ringed.">
 
-   The extension's folder opens.
+   The folder Chrome uses opens.
 
 ### Step 2. Double-click the updater
 
@@ -187,32 +229,37 @@ the one whose **Type** says **Windows Batch File**.
 Your computer checks with you once, because the file came from the internet.
 After that, it just runs.
 
-**On a Mac with macOS 15 (Sequoia) or newer:**
+**On a Mac**, a box appears. **Never click "Move to Trash".** Look at the box:
 
-1. A box says the file was **Not Opened**. Click **Done**, never Move to
-   Trash.
+- **It says "Not Opened" and has a Done button** (macOS 15 or newer): do 1 to
+  3 below.
+- **It has no Done button** (macOS 14 or older): click **OK** or **Cancel**.
+  Then right-click (or Control-click) the file, choose **Open**, and click
+  **Open** again. Then go on to Step 4.
+
+1. Click **Done**.
 
    <img src="docs/how-to-update/mac-not-opened.png" width="320" alt="Example of the box: Update Quiz Answers.command Not Opened. Done is ringed. Move to Trash is marked Never this.">
 
 2. Click the Apple menu (the apple at the very top left of the screen), then
-   **System Settings**, then **Privacy & Security**. Scroll down to **Security** and
-   click **Open Anyway**.
+   **System Settings**, then **Privacy & Security**. Scroll down to
+   **Security**, and click **Open Anyway**.
 
    <img src="docs/how-to-update/mac-open-anyway.png" width="560" alt="Example of System Settings, Privacy and Security. Under Security: Update Quiz Answers.command was blocked to protect your Mac, with the Open Anyway button ringed.">
 
-3. Click **Open Anyway** once more, then type your Mac password (or use
-   Touch ID).
+3. Click **Open Anyway** once more, then type your Mac password (or use Touch
+   ID). If your Mac account is not an administrator, someone who is has to type
+   their password here.
 
    <img src="docs/how-to-update/mac-open-confirm.png" width="320" alt="Example of the second box, with Open Anyway ringed.">
 
    No Open Anyway button? It only stays for about an hour. Double-click the
-   file again, click Done, and come straight back here.
+   file again, click **Done**, and come straight back here. Still no button,
+   or your password is not accepted? Use
+   [the Terminal way](#mac-it-will-not-open).
 
-**On a Mac with macOS 14 (Sonoma) or older:** right-click (or Control-click)
-the file, choose **Open**, then click **Open** again.
-
-**On any Mac:** if you are asked whether "Terminal" may access a folder, click
-**Allow**.
+**On any Mac:** if a box asks whether **"Terminal"** may access files in a
+folder, click **Allow** (on some Macs it says **OK**). Never "Don't Allow".
 
 <img src="docs/how-to-update/mac-folder-access.png" width="320" alt="Example of the question: Terminal would like to access files in your Documents folder. Allow is ringed.">
 
@@ -228,36 +275,101 @@ message. Right-click **Update Quiz Answers**, choose **Properties**, tick
 
 ### Step 4. Let it finish
 
-A window shows the progress. It takes a few seconds. When it says
-**"Updated Quiz Answers from … to …"**, press **Return** (Mac) or **Enter**
-(Windows) to close it.
+A window shows the progress. It takes a few seconds. When it says **"From now
+on Quiz Answers can update itself"**, press **Return** (Mac) or **Enter**
+(Windows).
+
+On a Mac, the window may then stay open and say **[Process completed]**. That
+is fine: close it with the red dot at its top left.
 
 **On a Mac:**
 
-<img src="docs/how-to-update/mac-terminal.png" width="560" alt="Example of the Terminal window when it has finished: Updated Quiz Answers from 1.8.0 to 1.9.0, followed by Press Return to close this window.">
+<img src="docs/how-to-update/mac-terminal.png" width="560" alt="Example of the Terminal window when it has finished: Updated Quiz Answers, then: From now on Quiz Answers can update itself: when a new version is out, click Update now in its window. Then: Press Return to close this window.">
 
 **On Windows:**
 
-<img src="docs/how-to-update/win-console.png" width="560" alt="Example of the black window when it has finished: Updated Quiz Answers from 1.8.0 to 1.9.0, followed by Press Enter to close this window.">
+<img src="docs/how-to-update/win-console.png" width="560" alt="Example of the black window when it has finished: Updated Quiz Answers, then: From now on Quiz Answers can update itself: when a new version is out, click Update now in its window. Then: Press Enter to close this window.">
+
+It says **"You already have the latest version"** instead of "Updated"? That
+is right if you have just done A. It still switches the button on.
 
 ### Step 5. Finish in Chrome
 
-Click the Quiz Answers icon. If the button says **Restart to finish the
-update**, click it. Then click the icon again.
+1. Go back to Chrome and click a tab with an ordinary website in it, such as
+   your quiz. (Not the Extensions tab: there, Quiz Answers can only say
+   "Cannot read this page".)
+2. Click the Quiz Answers icon. If the button says **Restart to finish the
+   update**, click it. Then click the icon again.
 
-<img src="docs/how-to-update/b5-popup-restart.png" width="340" alt="The Quiz Answers box with one button, 'Restart to finish the update', ringed, and the note: Version 1.9.0 is installed. After the restart, click the icon again to get answers.">
+   <img src="docs/how-to-update/b5-popup-restart.png" width="340" alt="The Quiz Answers box with one button, 'Restart to finish the update', ringed, and the note: Version 1.9.0 is installed. After the restart, click the icon again to get answers.">
 
-✅ **Done!** (Is the button just **Get answers**? Then it has already
-switched over by itself, and there is nothing more to do.)
+✅ **Done!** From now on, use [C](#c-every-update-after-that-one-click) to
+update.
+
+No Restart button? Then there is nothing more to do. Does the bottom of the box
+say the new version **switches over by itself once you close or leave the page
+with answers**? Then you are done too: it finishes by itself when you close
+that page, so leave **Restart now (clears answers)** alone.
+
+---
+
+## C. Every update after that: one click
+
+### Step 1. Click "Update now"
+
+1. Click a tab with an ordinary website in it, then click the Quiz Answers
+   icon. When a new version is out, the bottom of the box says so. Click
+   **Update now**.
+
+   <img src="docs/how-to-update/c1-update-now.png" width="340" alt="The Quiz Answers box. At the bottom: Version 1.10.0 is out. The Update now button next to it is ringed.">
+
+   - **No line about a new version?** Then you already have the newest one.
+     (It checks about once an hour. To check right now, right-click the Quiz
+     Answers icon and choose **Options**: the settings page asks straight
+     away, and has the same **Update now** button.)
+   - **It says to double-click "Update Quiz Answers" instead?** The button is
+     not switched on yet: do
+     [B. Switch on the Update button](#b-switch-on-the-update-button-once)
+     once.
+
+2. It says **Updating to …**. Wait a few seconds.
+
+   <img src="docs/how-to-update/c2-updating.png" width="340" alt="The Quiz Answers box, saying: Updating to 1.10.0… this takes a few seconds.">
+
+3. It says **Restarting… click the icon again in a moment**, and the box
+   closes by itself. Click the Quiz Answers icon again.
+
+   <img src="docs/how-to-update/c3-restarting.png" width="340" alt="The Quiz Answers box, saying: Updated Quiz Answers from 1.9.0 to 1.10.0. Restarting… click the icon again in a moment.">
+
+✅ **Done!**
+
+<!-- mac-first-click -->
+
+Does the bottom of the box say the new version **switches over by itself once
+you close or leave the page with answers**? Then you are done too: it finishes
+by itself when you close that page.
+
+Did it say the update did not work? It says why. You can always update with
+the double-click instead: do
+[B. Switch on the Update button](#b-switch-on-the-update-button-once) again.
 
 ---
 
 ## Something went wrong?
 
 **The version number did not change after the one-time update.**
-The new files went into a different folder. Go back to
-[Step 1](#step-1-open-the-folder-chrome-uses) and use the window that opens
-when you click **Loaded from**. That is the folder to paste into.
+First check that you clicked the round arrow on the Quiz Answers box itself,
+not Chrome's own one next to the address bar. Still the old number? The new
+files went into a different folder, or you unzipped an old download. Do
+**every** step of [A](#a-the-one-time-update-versions-below-180) again, with a
+fresh download, and paste into the window that opens from **Loaded from**.
+
+**I clicked "Keep Both" (Mac) or "Skip these files" (Windows) by mistake.**
+Nothing is broken. Do
+[Step 4](#step-4-paste-them-into-the-folder-chrome-uses) of A again. Paste even
+though **Update Quiz Answers** is in the folder now, and this time click
+**Replace**. You may see extra items ending in "2" in the folder afterwards.
+You can leave them.
 
 **The Quiz Answers box has an "Errors" button, saying "Service worker
 registration failed", and Get answers does nothing.** Chrome restarted it
@@ -266,38 +378,51 @@ finished (no progress bar, no question waiting in another window), then click
 the **round arrow** on the box. Then click **Errors** and **Clear all**. Old
 messages stay in that list even after the problem is fixed.
 
-**I clicked "Keep Both" by mistake.** Nothing is broken. Do
-[Step 4](#step-4-copy-the-new-files-into-the-old-folder) again, and this time
-click **Replace**. Afterwards you may see extra items ending in "copy" or
-"2" in the old folder. You can leave them.
+**There are two Quiz Answers boxes.** Click **Details** on each. Keep the one
+whose **Loaded from** is the folder you updated, and switch the other one off
+with the switch at its bottom right. (Not updated yet? Click the Quiz Answers
+icon: the copy that gives answers without asking for a key is the one to
+update.)
 
-**Chrome now shows two Quiz Answers boxes.** Click **Details** on each. Keep
-the one whose **Loaded from** is the folder you updated. Switch the other one
-off with the switch at its bottom right.
+**It is asking for my API key again.** Chrome is using a different copy of Quiz
+Answers: the folder was moved or renamed, or Quiz Answers was removed and added
+again. Paste your key in again (click the Quiz Answers icon, then **Open
+settings**). No copy of it? Make a new key at
+https://platform.openai.com/api-keys, the same way as when you first set it up.
 
-**It is asking for my API key again.** Chrome is loading a different folder
-than before. That happens if the folder was moved or renamed. Paste your key
-in again, and everything else carries on as normal.
+**Quiz Answers has disappeared from `chrome://extensions`.** It was removed,
+and its saved key went with it. Click **Load unpacked** at the top left (with
+**Developer mode** on), choose the same folder as before, and paste your API key
+in again.
 
-**Mac: "could not be executed because you do not have appropriate access
-privileges".** Open **Terminal** (press <kbd>⌘</kbd>+<kbd>Space</kbd>, type
-*Terminal*, press Return). Type `bash` and a space, drag **Update Quiz
-Answers.command** into the Terminal window, and press Return. After one run
-like this, double-clicking works again.
+**Mac: I clicked "Move to Trash".** Open the Trash (the bin at the end of the
+Dock). Right-click **Update Quiz Answers.command** and choose **Put Back**.
+Then start again at [Step 2 of B](#step-2-double-click-the-updater).
+
+<a id="mac-it-will-not-open"></a>
+**Mac: it will not open (no Open Anyway button, your password is not
+accepted, or "could not be executed because you do not have appropriate access
+privileges").** Open **Terminal**: press <kbd>⌘</kbd>+<kbd>Space</kbd>, type
+*Terminal*, and press Return. Type `bash` and a space (type it yourself; do not
+paste it). Drag **Update Quiz Answers.command** from its folder into the
+Terminal window, and press Return. It runs exactly as a double-click would, and
+the Mac does not ask first.
 
 **Mac: "Operation not permitted".** Open the Apple menu → **System
-Settings** → **Privacy & Security** → **Files & Folders** → **Terminal**, and
-switch on the folder Quiz Answers is in (Documents, Desktop or Downloads).
-Then double-click the updater again.
+Settings** → **Privacy & Security** → **Files & Folders**. Under **Terminal**
+(and, for the Update now button, **Google Chrome**), switch on the folder Quiz
+Answers is in: **Documents**, **Desktop** or **Downloads**. Then try again.
 
 **Windows: the window flashes and closes, or says scripts are disabled or
-"restricted".** That PC does not allow scripts. Use
-[the one-time update](#the-one-time-update-versions-below-180) steps instead.
-They work for every version.
+"restricted".** That PC does not allow scripts, so neither the double-click
+nor the Update now button can work on it. Use the steps in
+[A. The one-time update](#a-the-one-time-update-versions-below-180) for every
+update instead. They work for every version.
 
 **Quiz Answers stopped working, and its box says "Turn on developer mode".**
 At the top right of `chrome://extensions`, switch **Developer mode** on. It
-needs to stay on.
+needs to stay on. If Chrome offers **Remove** or **Remove all**, do not click
+it: that deletes Quiz Answers and your saved API key.
 
 ---
 
@@ -305,6 +430,8 @@ needs to stay on.
 
 - Your API key is kept inside Chrome, not in the folder, so updating never
   touches it.
-- Never move or rename the extension's folder. Chrome finds Quiz Answers by
-  where that folder is.
+- Never click **Remove** on Quiz Answers. That deletes your API key and
+  settings.
+- Never move, rename or delete the extension's folder. Chrome finds Quiz
+  Answers by where that folder is.
 - Keep **Developer mode** switched on at `chrome://extensions`.

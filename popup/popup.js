@@ -296,6 +296,7 @@ chrome.storage.onChanged.addListener((changes, area) => {
 async function renderUpdate() {
   const text = $('update-text');
   const action = $('update-action');
+  action.hidden = false; // runUpdate hides it while it works
 
   const installed = await pendingRestart();
   if (installed) {
@@ -346,11 +347,11 @@ function offerFolder() {
 async function runUpdate(latest) {
   const text = $('update-text');
   const action = $('update-action');
-  action.disabled = true;
+  // Out of the way while it works: a button that is still there looks like it still wants a click.
+  action.hidden = true;
   text.textContent = `Updating to ${latest}… this takes a few seconds.`;
 
   const res = await updateNow();
-  action.disabled = false;
 
   if (res?.ok && /^Updated /.test(res.summary || '')) {
     let held = 1;
@@ -358,7 +359,6 @@ async function runUpdate(latest) {
     if (!held) {
       // Nothing to lose by restarting, and the person asked for the update.
       text.textContent = `${res.summary} Restarting… click the icon again in a moment.`;
-      action.hidden = true;
       await new Promise((r) => setTimeout(r, 1200));
       return restart();
     }
@@ -366,7 +366,6 @@ async function runUpdate(latest) {
   }
   if (res?.ok) {
     text.textContent = res.summary || 'You already have the latest version.';
-    action.hidden = true;
     return;
   }
   const why = res?.summary || res?.error?.message || 'The update did not work.';

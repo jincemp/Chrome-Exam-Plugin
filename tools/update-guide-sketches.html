@@ -123,7 +123,9 @@
   .console pre { margin: 0; padding: 12px 14px 18px; min-height: 240px; background: #0c0c0c; color: #cccccc; font: 12.5px/1.5 'DejaVu Sans Mono', monospace; white-space: pre-wrap; }
   .ctx { width: 250px; background: #fafafa; border: 1px solid #cfcfcf; box-shadow: 0 8px 22px rgba(0,0,0,.18); padding: 5px; font-size: 13px; border-radius: 8px; }
   .ctx div { padding: 6px 12px; border-radius: 4px; }
-  .keys { display: inline-flex; gap: 6px; align-items: center; font-size: 12px; color: var(--muted); }
+  /* Ordinary text with keys in it, so the words wrap and the full stops stay put. */
+  .keys { line-height: 2.3; }
+  .keys kbd { margin: 0 2px; }
   kbd { font: 700 12px/1 Inter, sans-serif; color: var(--ink); background: #fff; border: 1px solid #c9ccd1; border-bottom-width: 3px; border-radius: 5px; padding: 4px 7px; }
   .note { font-size: 12px; color: var(--muted); margin-top: 10px; }
 
@@ -148,7 +150,7 @@
 </head>
 <body>
 
-<!-- 2. Download the new version -->
+<!-- A2. Download the new version -->
 <figure id="github-download">
   <div class="gh" style="position: relative; height: 330px;">
     <div class="gh-top">jincemp / <b>Chrome-Exam-Plugin</b> <span class="pill">Public</span></div>
@@ -167,7 +169,7 @@
   </div>
 </figure>
 
-<!-- 3a. Mac: unzip -->
+<!-- A3. Mac: unzip -->
 <figure id="mac-unzip">
   <div class="mac-win">
     <div class="mac-bar"><span class="dots"><i></i><i></i><i></i></span><span class="mac-title">Downloads</span></div>
@@ -180,9 +182,7 @@
   <div class="caption">Double-click the .zip, and the folder appears next to it.</div>
 </figure>
 
-<!-- 1. Mac: the folder Chrome opened (old version) -->
-
-
+<!-- A3. Mac: the new folder, and how to know it is the new one -->
 <figure id="mac-new-folder">
   <div class="mac-win">
     <div class="mac-bar"><span class="dots"><i></i><i></i><i></i></span><span class="mac-title">Chrome-Exam-Plugin-main</span></div>
@@ -191,6 +191,7 @@
   </div>
 </figure>
 
+<!-- A3. Windows: the new folder -->
 <figure id="win-new-folder">
   <div class="win">
     <div class="win-bar"><span class="t">Chrome-Exam-Plugin-main</span><span class="x">✕</span></div>
@@ -200,7 +201,7 @@
   </div>
 </figure>
 
-<!-- 4a. Mac: select everything in the NEW folder and copy -->
+<!-- A3. Mac: select everything in the new folder and copy -->
 <figure id="mac-copy">
   <div style="position: relative; padding-bottom: 6px;">
     <div class="menubar"><b>Finder</b><span>File</span><span class="open">Edit</span><span>View</span><span>Go</span><span>Window</span></div>
@@ -220,7 +221,7 @@
   </div>
 </figure>
 
-<!-- 4b. Mac: paste into the OLD folder -->
+<!-- A4. Mac: paste into the folder Chrome uses -->
 <figure id="mac-paste">
   <div style="position: relative; padding-bottom: 6px;">
     <div class="menubar"><b>Finder</b><span>File</span><span class="open">Edit</span><span>View</span><span>Go</span><span>Window</span></div>
@@ -240,7 +241,7 @@
   </div>
 </figure>
 
-<!-- 4c. Mac: the replace question -->
+<!-- A4. Mac: the replace question -->
 <figure id="mac-replace">
   <div class="alert" style="width: 420px; text-align: left;">
     <div style="display: flex; gap: 14px;">
@@ -369,19 +370,16 @@
   </div>
 </figure>
 
-<!-- A1. Windows: the folder Chrome opened (old version) -->
-
-
-<!-- A4. Windows: copy everything from the NEW folder -->
+<!-- A3. Windows: copy everything from the new folder -->
 <figure id="win-copy">
   <div class="win">
     <div class="win-bar"><span class="t">Chrome-Exam-Plugin-main</span><span class="x">✕</span></div>
     <div class="crumbs">Downloads › Chrome-Exam-Plugin-main › Chrome-Exam-Plugin-main</div>
     <table class="list" data-tree="new" data-os="win" data-select="all"></table>
   </div>
-  <div class="caption" style="display: flex; gap: 26px; margin-top: 16px;">
-    <span class="keys">1. Hold <kbd>Ctrl</kbd> and press <kbd>A</kbd>: everything turns blue.</span>
-    <span class="keys">2. Hold <kbd>Ctrl</kbd> and press <kbd>C</kbd>.</span>
+  <div class="caption keys">
+    1. Hold <kbd>Ctrl</kbd> and press <kbd>A</kbd>: everything turns blue.<br />
+    2. Hold <kbd>Ctrl</kbd> and press <kbd>C</kbd>.
   </div>
 </figure>
 
@@ -393,9 +391,9 @@
     <table class="list" data-tree="old" data-os="win"></table>
     <div style="height: 10px;"></div>
   </div>
-  <div class="caption" style="display: flex; gap: 26px; margin-top: 16px;">
-    <span>The folder that opened from <b>Loaded from</b>.</span>
-    <span class="keys">Click an empty spot, then hold <kbd>Ctrl</kbd> and press <kbd>V</kbd>.</span>
+  <div class="caption keys">
+    The folder that opened from <b>Loaded from</b>: the one Chrome uses.<br />
+    Click an empty spot in it, then hold <kbd>Ctrl</kbd> and press <kbd>V</kbd>.
   </div>
 </figure>
 
