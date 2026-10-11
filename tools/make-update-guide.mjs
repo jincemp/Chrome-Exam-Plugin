@@ -105,9 +105,15 @@ for (const entry of ['manifest.json', 'src', 'popup', 'options', 'icons']) {
 }
 const manifestPath = path.join(extDir, 'manifest.json');
 const baseManifest = JSON.parse(readFileSync(manifestPath, 'utf8'));
-/** Sets the version on disk. The extension also gets the local quiz page, so its popup can scan it. */
+/**
+ * Sets the version on disk. For the popup pictures the extension may also read
+ * the local quiz page - but not before, or Chrome's Details page would list a
+ * site no one else has.
+ */
+let quizAccess = false;
 const writeVersion = (version) => writeFileSync(manifestPath, JSON.stringify({
-  ...baseManifest, version, host_permissions: [...baseManifest.host_permissions, `${origin}/*`],
+  ...baseManifest, version,
+  host_permissions: quizAccess ? [...baseManifest.host_permissions, `${origin}/*`] : baseManifest.host_permissions,
 }, null, 2));
 writeVersion(OLD);
 
@@ -245,7 +251,7 @@ try {
   await ext.evaluate(() => {
     // Bring "Source / Loaded from" up the screen, with what is above it for context.
     const view = document.querySelector('extensions-manager').shadowRoot.querySelector('extensions-detail-view');
-    view.shadowRoot.querySelector('#load-path').scrollIntoView({ block: 'end' });
+    view.shadowRoot.querySelector('#load-path').scrollIntoView({ block: 'center' });
   });
   await ext.waitForTimeout(300);
   await mark(ext, loadPath, 'Click the path', 'right');
@@ -261,6 +267,7 @@ try {
   await unmark(ext);
 
   // The person has copied the new files in and pressed reload.
+  quizAccess = true;
   writeVersion(CURRENT);
   await ext.evaluate((id) => chrome.developerPrivate.reload(id, { failQuietly: true }), extensionId);
   await ext.waitForTimeout(1500);
@@ -359,23 +366,32 @@ try {
   const guide = readFileSync(path.join(root, 'HOW-TO-UPDATE.md'), 'utf8')
     .replace(/<!-- web-only -->[\s\S]*?<!-- \/web-only -->/g, '');
   const pdfPage = await context.newPage();
-  await pdfPage.setContent(`<!doctype html><html><head><meta charset="utf-8">
+  const pdfHtml = path.join(scratch, 'guide.html');
+  writeFileSync(pdfHtml, `<!doctype html><html><head><meta charset="utf-8">
     <base href="${pathToFileURL(root + '/').href}">
     <style>
       @page { size: A4; margin: 16mm 15mm; }
       body { font: 11.5pt/1.5 Inter, system-ui, sans-serif; color: #1d1f23; }
       h1 { font-size: 22pt; margin: 0 0 6pt; }
-      h2 { font-size: 15pt; margin: 20pt 0 6pt; break-after: avoid; border-top: 1px solid #dfe1e4; padding-top: 12pt; }
+      h2 { font-size: 15pt; margin: 0 0 6pt; break-after: avoid; }
+      /* Each part starts on its own page, so a printout can be handed over in pieces. */
+      h2:not(:first-of-type) { break-before: page; }
       h3 { font-size: 12.5pt; margin: 14pt 0 4pt; break-after: avoid; }
-      img { max-width: 100%; height: auto; display: block; margin: 6pt 0 10pt; break-inside: avoid; }
-      p, li { break-inside: avoid; }
+      img { zoom: .8; max-width: 100%; height: auto; display: block; margin: 6pt 0 10pt; break-inside: avoid; }
+      /* "On a Mac:" and the like stay on the page with the picture they introduce. */
+      p:has(> strong:only-child), p:has(+ p > img), li > p:has(+ img) { break-after: avoid; }
+      hr { display: none; }
       code { font: 10pt 'DejaVu Sans Mono', monospace; background: #f1f2f4; padding: 1px 4px; border-radius: 3px; }
       blockquote { margin: 8pt 0; padding: 6pt 12pt; border-left: 3px solid #e8590c; background: #fbf3ee; }
       table { border-collapse: collapse; } td, th { border: 1px solid #dfe1e4; padding: 4pt 8pt; text-align: left; }
       a { color: #1d1f23; }
       kbd { font: 600 9.5pt Inter, sans-serif; border: 1px solid #c9ccd1; border-bottom-width: 2px; border-radius: 4px; padding: 0 4px; }
-      hr { border: 0; border-top: 1px solid #dfe1e4; margin: 16pt 0; }
-    </style></head><body>${marked.parse(guide)}</body></html>`, { waitUntil: 'load' });
+
+    </style></head><body>${marked.parse(guide)}</body></html>`);
+  // Opened from disk, not set as content: only a file page may load the pictures beside it.
+  await pdfPage.goto(pathToFileURL(pdfHtml).href, { waitUntil: 'load' });
+  const missing = await pdfPage.evaluate(() => [...document.images].filter((i) => !i.naturalWidth).map((i) => i.getAttribute('src')));
+  if (missing.length) throw new Error(`pictures missing from the PDF: ${missing.join(', ')}`);
   await pdfPage.pdf({ path: PDF, format: 'A4', printBackground: true, margin: { top: '16mm', bottom: '16mm', left: '15mm', right: '15mm' } });
   await pdfPage.close();
 
