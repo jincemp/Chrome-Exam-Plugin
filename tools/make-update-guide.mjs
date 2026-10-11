@@ -458,7 +458,9 @@ try {
       /* Each part starts on its own page, so a printout can be handed over in pieces. */
       h2:not(:first-of-type) { break-before: page; }
       h3 { font-size: 12.5pt; margin: 14pt 0 4pt; break-after: avoid; }
-      img { zoom: .8; max-width: 100%; height: auto; display: block; margin: 6pt 0 10pt; break-inside: avoid; }
+      img { zoom: .72; max-width: 100%; height: auto; display: block; margin: 6pt 0 10pt; break-inside: avoid; }
+      /* A sentence is never split across two sheets of paper. */
+      p, li { orphans: 3; widows: 3; } p { break-inside: avoid; }
       /* "On a Mac:" and the like stay on the page with the picture they introduce. */
       p:has(> strong:only-child), p:has(+ p > img), li > p:has(+ img) { break-after: avoid; }
       hr { display: none; }

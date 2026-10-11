@@ -28,7 +28,7 @@ update on its own, with a picture of every screen — send them the link, or the
 [PDF of it](docs/how-to-update/How-to-update-Quiz-Answers.pdf).
 
 **Already installed?** [Updating to a new version](#updating-to-a-new-version)
-is the section you want — from 1.8.0 it is a double-click — and [When an answer is wrong](#when-an-answer-is-wrong)
+is the section you want — from 1.9.0 it is one click — and [When an answer is wrong](#when-an-answer-is-wrong)
 is the one to read if the answers are not what you expected.
 [Settings](#settings), [Cost](#cost) and [Troubleshooting](#troubleshooting) are
 further down, and [Share it with a friend](#share-it-with-a-friend) covers
@@ -289,22 +289,32 @@ quit Chrome. Nothing is written to disk except your settings.
 
 ## Updating to a new version
 
-From version 1.8.0, updating is a double-click. The popup tells you when there
-is something new, at the bottom:
+From version 1.9.0, Quiz Answers updates itself. When there is something new,
+the popup says so at the bottom, with a button:
 
-> Version 1.9.0 is out. To get it, double-click "Update Quiz Answers" in the
-> extension's folder. <u>Where is the folder?</u>
+> Version 1.10.0 is out. <u>Update now</u>
 
-**Where is the folder?** opens the extension's page in Chrome, which shows the
-folder's location next to *Loaded from*.
+Click **Update now**, wait a few seconds, and it restarts onto the new version;
+click the icon again to carry on. The settings page has the same button, and
+it checks for a new version as soon as you open it.
 
-Your API key and settings are never touched. The updater changes what is
-*inside* the folder and never moves it, so Chrome still sees the same
+**The button has to be switched on once, by a double-click.** Chrome will not
+let an extension change its own files, so the button asks a small helper that
+lives in the extension's folder to do it. Double-clicking **Update Quiz
+Answers** in that folder (below) registers the helper with Chrome, for this
+copy of Quiz Answers alone, and updates it at the same time. Until then the
+popup says *"double-click "Update Quiz Answers" in the extension's folder"*
+instead, and **Where is the folder?** opens the extension's page in Chrome,
+which shows the folder's location next to *Loaded from*. The double-click goes
+on working whenever you prefer it, and on a PC that does not allow the button.
+
+Either way, your API key and settings are never touched. The updater changes
+what is *inside* the folder and never moves it, so Chrome still sees the same
 extension — which is exactly the step that used to go wrong by hand. If
 anything fails partway, such as the internet dropping or a bad download, it
 puts every file back as it was and tells you so. If even that is cut short —
-the window closed, the computer switched off — the next double-click puts the
-old version back first.
+the window closed, the computer switched off — the next run puts the old
+version back first.
 
 **When it switches over.** Chrome keeps running the old version until the
 extension restarts, and a restart clears any answers on your open tabs. So it
@@ -318,8 +328,10 @@ Quitting and reopening Chrome also switches it over.
 1. In Finder, open the extension's folder and double-click
    **Update Quiz Answers**.
 2. A Terminal window opens. It downloads the new version, swaps it into the
-   folder, and finishes with *"Updated Quiz Answers from 1.8.0 to 1.9.0."*
-   Press Return to close it.
+   folder, and finishes with *"Updated Quiz Answers from 1.8.0 to 1.9.0."* (or
+   *"You already have the latest version"*) and *"From now on Quiz Answers can
+   update itself"*. Press Return. If the window then says *[Process
+   completed]*, close it.
 3. Click the Quiz Answers icon. If the popup's button says **Restart to finish
    the update**, click it, then click the icon again. If it has already
    switched over by itself, there is nothing to do.
@@ -364,7 +376,8 @@ block pasted commands. After one successful run the double-click works again.
    one whose type is *Windows Batch File*. Windows hides the `.bat` on the end
    of its name; the other file, `Update Quiz Answers.command`, is for Macs.
 2. A black window shows progress and finishes with *"Updated Quiz Answers from
-   …"*. Press Enter to close it.
+   …"* (or *"You already have the latest version"*) and *"From now on Quiz
+   Answers can update itself"*. Press Enter to close it.
 3. Click the Quiz Answers icon, and if the button says **Restart to finish the
    update**, click it — as on a Mac.
 
@@ -394,8 +407,9 @@ After that it runs straight away. Two cases where it cannot run, and you need
 ### The first time: getting the updater
 
 The updater arrived in **1.8.0**, so a copy older than that does not have it
-yet. Follow [Updating by hand](#updating-by-hand) one last time. From then on,
-the double-click is all you need.
+yet. Copy the new version in by hand one last time — [HOW-TO-UPDATE.md](HOW-TO-UPDATE.md)
+shows every screen of it, and [Updating by hand](#updating-by-hand) below is the
+same in brief — then double-click the updater once to switch on the button.
 
 ## Updating by hand
 
@@ -489,10 +503,10 @@ Chrome is still reading the old folder. Work through these in order:
    card. If Chrome shows an error like "Could not load extension" there, the
    folder it wants is missing or was renamed.
 4. **Start clean.** Remove the extension (**Remove** on its card), then
-   **Load unpacked** and pick the new folder. Reload the path *exactly* as
-   before and your settings come back with it; pick a different location and you
-   will need to paste your API key in again — which is a two-minute nuisance,
-   not a disaster.
+   **Load unpacked** and pick the new folder. Removing deletes your saved API
+   key and settings, wherever you load it from afterwards, so have your key
+   ready to paste in again (or make a new one) — a two-minute nuisance, not a
+   disaster.
 
 ### If the settings look wrong after an update
 
@@ -584,9 +598,10 @@ cap what someone else spends on it, and whatever they run comes off your card.
 Getting their own takes about five minutes.
 
 They get their own copy, with their own key and their own bill. Nothing is
-shared between you. Updates work the same way for them as for you: the popup
-says when there is a new version, and they double-click **Update Quiz
-Answers** — see [Updating to a new version](#updating-to-a-new-version).
+shared between you. Updates work the same way for them as for you: one
+double-click on **Update Quiz Answers** switches on the **Update now** button,
+and from then on the popup says when there is a new version — see
+[Updating to a new version](#updating-to-a-new-version).
 
 Nothing secret lives in the project page: your API key is stored in your
 browser, never in the files.
@@ -657,13 +672,20 @@ never update on their own.
 - The extension asks for `activeTab`, not for access to every site: it can only
   read a page in the moment you click its icon.
 - To tell you about updates, it reads the version number in the project's
-  `manifest.json` on GitHub — at most once every few hours, and only when you
-  open the popup or settings. Like any web request, it shows GitHub your IP
+  `manifest.json` on GitHub — at most once an hour, and only when you open the
+  popup or settings. Like any web request, it shows GitHub your IP
   address, and Chrome adds this copy's extension ID, which is worked out from
   the folder's location on your computer. It carries nothing about the pages
   you read or your answers, needs no extra permission, and is the only request
   the extension makes that is not part of answering your questions. Nothing it
   downloads is run; the number is just shown.
+- **Update now** works through Chrome's *native messaging*: the extension can
+  start one program that you have registered for it, and nothing else. The
+  updater registers its own helper (`updater/native-host.sh` on a Mac,
+  `updater/native-host.bat` on Windows), for this copy's extension ID only. The
+  helper takes no instructions from the extension beyond "update" — it runs the
+  same updater a double-click runs, which downloads the release from GitHub.
+  That is why the extension asks for the `nativeMessaging` permission.
 
 ## Troubleshooting
 
@@ -731,9 +753,9 @@ popup does not cancel it.
 | `src/openai.js` | API client: retries, endpoint fallback, error mapping |
 | `src/prompt.js` | Instructions and the JSON schema for answers |
 | `src/storage.js` | Settings and per-tab job records |
-| `src/update.js` | Says when a newer version is out, and restarts onto new files once the updater has put them in place |
+| `src/update.js` | Says when a newer version is out, asks the helper to install it, and restarts onto the new files once they are all in place |
 | `Update Quiz Answers.command` / `.bat` | The double-click updaters for Mac and Windows; each is a one-line launcher for the script in `updater/` |
-| `updater/` | `update.sh` (Mac) and `update.ps1` (Windows): download the latest release and swap it into this folder, in place, with rollback |
+| `updater/` | `update.sh` (Mac) and `update.ps1` (Windows): download the latest release and swap it into this folder, in place, with rollback. `native-host.sh` and `native-host.bat`/`.ps1`: the helper the **Update now** button asks to run them, through Chrome's native messaging |
 | `src/format.js` | `Q1: b) 230.34` |
 | `popup/` | The dropdown |
 | `options/` | Settings page |

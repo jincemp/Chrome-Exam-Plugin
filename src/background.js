@@ -660,6 +660,10 @@ function helperProblem(err) {
   if (/not found/i.test(m)) return 'The update helper is not set up yet.';
   if (/forbidden/i.test(m)) return 'The update helper belongs to another copy of Quiz Answers.';
   if (/exited/i.test(m)) return 'The update helper stopped before it finished.';
+  // What a Mac says when the helper cannot be run at all, e.g. it lost its "executable" mark.
+  if (/failed to start/i.test(m)) return 'The update helper could not start.';
+  // NativeMessagingBlocklist: a managed computer.
+  if (/administrator/i.test(m)) return 'Whoever manages this computer has switched off updating from here.';
   return m || 'The update helper did not work.';
 }
 
