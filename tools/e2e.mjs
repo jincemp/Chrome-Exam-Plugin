@@ -446,8 +446,13 @@ try {
     assert.equal(job.record.answers.length, 3);
   });
 
+  // The worker stores the answers first and marks the toolbar after - the
+  // icon, decoded the first time, then the badge - so give it a moment.
   const badge = await driver.evaluate(async (quizUrl) => {
     const [tab] = await chrome.tabs.query({ url: quizUrl });
+    for (let i = 0; i < 30 && !(await chrome.action.getBadgeText({ tabId: tab.id })); i++) {
+      await new Promise((r) => setTimeout(r, 100));
+    }
     return {
       text: await chrome.action.getBadgeText({ tabId: tab.id }),
       colour: await chrome.action.getBadgeBackgroundColor({ tabId: tab.id }),
@@ -1160,6 +1165,14 @@ try {
   await driver2.evaluate((id) => chrome.runtime.sendMessage({ type: 'start', tabId: id, force: true }), quizTabId);
   const midRun = await waitForJob(driver2, quizTabId, 'thinking', 10000);
   const refused = await driver2.evaluate(() => chrome.runtime.sendMessage({ type: 'restart' }));
+  const busyPopup = await openPopupFor(quizTabId);
+  await busyPopup.waitForSelector('#panel-busy:not([hidden])', { timeout: 2000 }).catch(() => {});
+  const busySays = await busyPopup.textContent('#busy-label').catch(() => '');
+  await busyPopup.close();
+
+  check('while the answers are on their way, the popup just says "Loading"', () => {
+    assert.match(busySays, /^Loading( \(\d+\/\d+\))?$/, `it says: ${busySays}`);
+  });
 
   check('a restart asked for while answers are being worked on is refused, not paid for twice', () => {
     assert.equal(midRun, 'thinking', 'the job was not caught mid-run');

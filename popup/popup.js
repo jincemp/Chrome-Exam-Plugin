@@ -14,7 +14,7 @@ const panels = {
 
 const BUSY_LABELS = {
   reading: 'Reading page…',
-  thinking: 'Asking OpenAI…',
+  thinking: 'Loading',
 };
 
 let tab = null;
